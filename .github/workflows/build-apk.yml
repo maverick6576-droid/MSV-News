@@ -1,0 +1,77 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web application
+        run: npm run build
+
+      - name: Sync Capacitor to Android
+        run: npx cap sync android
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build Android APK (Release & Debug)
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Rename APK for easy download
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk MSV-News.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MSV-News-APK
+          path: MSV-News.apk
+
+      - name: Create GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/main')
+        with:
+          tag_name: v1.0.0
+          name: "MSV News v1.0.0 (APK Android)"
+          body: |
+            ### 📱 Descarga para Android
+            Descarga el archivo **MSV-News.apk** adjunto a esta release e instálalo directamente en tu dispositivo Android.
+            
+            - **100% Funcional Offline** (sin Wi-Fi / sin datos una vez sincronizado).
+            - Mapas y rutas interactivos con Leaflet + OSM.
+            - Geolocalización GPS en tiempo real.
+            - Síntesis de voz automática (`es-ES`) de periódicos y notas por parada.
+            - Sincronización gratuita con Google Sheets.
+          files: MSV-News.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
