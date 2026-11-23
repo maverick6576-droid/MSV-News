@@ -14,21 +14,25 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   };
 
   return (
-    <div className="flex min-h-[100dvh] flex-col justify-between bg-[#0B0F17] px-6 py-12 text-white">
-      <div className="mx-auto w-full max-w-sm pt-10">
-        <div className="inline-flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-xs font-semibold text-slate-300 ring-1 ring-white/10">
-          <span className="h-2 w-2 rounded-full bg-[#4285F4]" />
-          MSV News
+    <div className="flex min-h-[100dvh] flex-col justify-between bg-black px-6 py-10 text-white">
+      <div className="mx-auto w-full max-w-sm pt-4">
+        {/* Logo corporativo Missatgers Sant Valentí */}
+        <div className="overflow-hidden rounded-2xl border border-[#D4AF37]/30 bg-black shadow-[0_8px_32px_rgba(212,175,55,0.12)]">
+          <img
+            src="./logo-msv.png"
+            alt="Missatgers Sant Valentí"
+            className="w-full h-auto object-contain"
+          />
         </div>
 
-        <h1 className="mt-5 text-3xl font-bold tracking-tight text-white">
+        <h1 className="mt-7 text-2xl font-bold tracking-tight text-white">
           Inicia tu jornada de reparto
         </h1>
-        <p className="mt-2 text-sm leading-relaxed text-slate-400">
+        <p className="mt-1.5 text-sm leading-relaxed text-neutral-400">
           Introduce tu nombre o vehículo para cargar tus zonas y rutas offline.
         </p>
 
-        <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-7 space-y-4">
           <input
             id="driver-name"
             type="text"
@@ -36,12 +40,12 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
             onChange={(e) => setName(e.target.value)}
             placeholder="Ej. Carlos · Ruta 2"
             autoComplete="name"
-            className="w-full rounded-2xl bg-[#141B29] px-4 py-4 text-base text-white placeholder-slate-500 ring-1 ring-white/10 focus:ring-2 focus:ring-[#4285F4] focus:outline-none"
+            className="w-full rounded-2xl bg-[#111111] px-4 py-4 text-base text-white placeholder-neutral-500 ring-1 ring-[#D4AF37]/25 focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
           />
 
           <button
             type="submit"
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#1A73E8] py-4 text-base font-bold text-white shadow-lg shadow-blue-950/40 active:scale-[0.98]"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#F3DC8B] via-[#D4AF37] to-[#B8860B] py-4 text-base font-extrabold text-black shadow-lg shadow-[#D4AF37]/15 active:scale-[0.98]"
           >
             Continuar
             <ArrowRight className="h-5 w-5" />
@@ -49,8 +53,8 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         </form>
       </div>
 
-      <p className="mx-auto max-w-sm text-center text-xs text-slate-500">
-        Funciona sin Wi-Fi ni datos una vez sincronizadas las zonas.
+      <p className="mx-auto max-w-sm text-center text-xs text-neutral-500">
+        Missatgers Sant Valentí · Funciona 100% sin Wi-Fi
       </p>
     </div>
   );

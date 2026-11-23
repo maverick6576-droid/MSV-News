@@ -71,8 +71,8 @@ export function SettingsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-end justify-center bg-black/75 backdrop-blur-sm sm:items-center">
-      <div className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-slate-700 bg-surface-900 text-white shadow-2xl sm:rounded-3xl">
+    <div className="fixed inset-0 z-[1000] flex items-end justify-center bg-black/80 backdrop-blur-sm sm:items-center">
+      <div className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-[#D4AF37]/30 bg-[#0C0C0C] text-white shadow-2xl sm:rounded-3xl">
         {/* Cabecera */}
         <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
           <h2 className="text-xl font-extrabold">Ajustes y Control</h2>

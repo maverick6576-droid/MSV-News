@@ -8,14 +8,14 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg', 'icon-maskable.svg'],
+      includeAssets: ['logo-msv.png', 'icon.svg', 'icon-maskable.svg'],
       manifest: {
-        name: 'MSV News - Reparto de Periódicos',
+        name: 'MSV News — Missatgers Sant Valentí',
         short_name: 'MSV News',
         description:
-          'PWA offline-first para conductores de reparto de periódicos con mapas, rutas y locución por voz.',
-        theme_color: '#090D16',
-        background_color: '#090D16',
+          'PWA offline-first para conductores de reparto de periódicos de Missatgers Sant Valentí.',
+        theme_color: '#000000',
+        background_color: '#000000',
         display: 'standalone',
         orientation: 'portrait',
         lang: 'es-ES',
@@ -23,16 +23,10 @@ export default defineConfig({
         scope: './',
         icons: [
           {
-            src: 'icon.svg',
-            sizes: '192x192 512x512',
-            type: 'image/svg+xml',
-            purpose: 'any',
-          },
-          {
-            src: 'icon-maskable.svg',
-            sizes: '192x192 512x512',
-            type: 'image/svg+xml',
-            purpose: 'maskable',
+            src: 'logo-msv.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable',
           },
         ],
       },
