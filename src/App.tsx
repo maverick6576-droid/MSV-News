@@ -238,8 +238,19 @@ export default function App() {
     await updateActiveProgress(reset, 0);
   };
 
-  const handleBackToZones = () => {
+  const handleBackToZones = async () => {
     stopSpeaking();
+    if (activeZoneId) {
+      const reset: ZoneProgress = {
+        zoneId: activeZoneId,
+        currentIndex: 0,
+        completed: false,
+        startedAt: Date.now(),
+        completedAt: null,
+      };
+      setProgressMap((prev) => ({ ...prev, [activeZoneId]: reset }));
+      await saveZoneProgress(reset);
+    }
     setActiveZoneId(null);
   };
 

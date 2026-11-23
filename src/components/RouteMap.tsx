@@ -103,10 +103,9 @@ export function RouteMap({ zone, currentIndex, driverPosition, gpsError }: Route
       preferCanvas: true,
     });
 
-    // Tiles nítidos estilo navegación (cacheados por el Service Worker)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    // Tiles gratuitos de OpenStreetMap (sin API key, compatible con WebView Android)
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      subdomains: 'abcd',
       crossOrigin: true,
     }).addTo(map);
 

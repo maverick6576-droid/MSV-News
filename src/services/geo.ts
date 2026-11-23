@@ -172,7 +172,7 @@ export async function precacheTilesForZones(zones: Zone[]): Promise<void> {
       const bottomRight = latLngToTile(minLat, maxLng, z);
       for (let x = topLeft.x - 1; x <= bottomRight.x + 1; x++) {
         for (let y = topLeft.y - 1; y <= bottomRight.y + 1; y++) {
-          tileUrls.add(`https://a.tile.openstreetmap.org/${z}/${x}/${y}.png`);
+          tileUrls.add(`https://tile.openstreetmap.org/${z}/${x}/${y}.png`);
           if (tileUrls.size >= 80) break;
         }
         if (tileUrls.size >= 80) break;
