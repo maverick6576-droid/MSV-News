@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core';
+import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import type { Stop, VoiceSettings } from '../types';
 
 let cachedEsVoice: SpeechSynthesisVoice | null = null;
@@ -35,22 +37,47 @@ export function buildStopSpeechMessage(stop: Stop): string {
 }
 
 export function stopSpeaking(): void {
+  if (Capacitor.isNativePlatform()) {
+    void TextToSpeech.stop().catch(() => {});
+    return;
+  }
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
 }
 
 export function speakStop(stop: Stop, settings: VoiceSettings, force = false): void {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   if (!force && (!settings.enabled || !settings.autoSpeak)) return;
 
-  // Cancela cualquier locución anterior para evitar solapamientos
+  const text = buildStopSpeechMessage(stop);
+  const rate = Math.min(1.5, Math.max(0.6, settings.rate));
+  const volume = Math.min(1, Math.max(0, settings.volume));
+
+  // En APK Android / iOS nativo usamos el motor nativo TextToSpeech del sistema
+  if (Capacitor.isNativePlatform()) {
+    void TextToSpeech.stop()
+      .catch(() => {})
+      .then(() =>
+        TextToSpeech.speak({
+          text,
+          lang: 'es-ES',
+          rate,
+          pitch: 1.0,
+          volume,
+          category: 'ambient',
+        })
+      )
+      .catch(() => {});
+    return;
+  }
+
+  // En navegador web usamos Web Speech API
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
 
-  const text = buildStopSpeechMessage(stop);
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'es-ES';
-  utterance.rate = Math.min(1.5, Math.max(0.6, settings.rate));
-  utterance.volume = Math.min(1, Math.max(0, settings.volume));
+  utterance.rate = rate;
+  utterance.volume = volume;
   utterance.pitch = 1.0;
 
   const voice = pickSpanishVoice();
@@ -62,5 +89,6 @@ export function speakStop(stop: Stop, settings: VoiceSettings, force = false): v
 }
 
 export function isSpeechSupported(): boolean {
+  if (Capacitor.isNativePlatform()) return true;
   return typeof window !== 'undefined' && 'speechSynthesis' in window;
 }
