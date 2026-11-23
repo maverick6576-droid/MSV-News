@@ -8,6 +8,23 @@ export interface Stop {
   lng: number | null;
 }
 
+export interface NavStep {
+  instruction: string;
+  maneuverType: string;
+  maneuverModifier?: string;
+  streetName: string;
+  distanceMeters: number;
+  location: [number, number]; // [lat, lng]
+}
+
+export interface ActiveNavigationRoute {
+  coordinates: [number, number][]; // [lat, lng]
+  distanceMeters: number;
+  durationSeconds: number;
+  steps: NavStep[];
+  isFallback: boolean;
+}
+
 export interface RouteGeometry {
   coordinates: [number, number][]; // [lat, lng]
   distanceMeters: number;

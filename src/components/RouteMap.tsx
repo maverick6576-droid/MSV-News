@@ -1,8 +1,23 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { Crosshair, ExternalLink, MapPin } from 'lucide-react';
+import {
+  ArrowUp,
+  CornerUpLeft,
+  CornerUpRight,
+  Crosshair,
+  ExternalLink,
+  Flag,
+  Navigation,
+  RotateCcw,
+} from 'lucide-react';
 import type { GeoPosition } from '../hooks/useGeolocation';
-import type { Stop, Zone } from '../types';
+import {
+  fetchTurnByTurnRoute,
+  formatDistanceEs,
+  formatDurationEs,
+  haversineMeters,
+} from '../services/geo';
+import type { ActiveNavigationRoute, NavStep, Stop, Zone } from '../types';
 
 interface RouteMapProps {
   zone: Zone;
@@ -12,46 +27,66 @@ interface RouteMapProps {
 }
 
 function createStopIcon(label: number, state: 'done' | 'current' | 'upcoming'): L.DivIcon {
-  const bg =
-    state === 'current'
-      ? '#F59E0B'
-      : state === 'done'
-        ? '#10B981'
-        : '#334155';
-  const textColor = state === 'current' ? '#090D16' : '#F8FAFC';
-  const size = state === 'current' ? 36 : 26;
-  const ring =
-    state === 'current'
-      ? 'box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.35), 0 4px 12px rgba(0,0,0,0.6); font-weight: 800; font-size: 15px;'
-      : 'box-shadow: 0 2px 6px rgba(0,0,0,0.5); font-weight: 700; font-size: 12px;';
+  if (state === 'current') {
+    return L.divIcon({
+      className: 'msv-stop-marker',
+      html: `<div style="position:relative;width:36px;height:36px;display:flex;align-items:center;justify-content:center;">
+        <div style="width:34px;height:34px;border-radius:9999px;background:#EA4335;color:#fff;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,0.45);font-weight:800;font-size:14px;">${label}</div>
+      </div>`,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
+    });
+  }
 
+  const bg = state === 'done' ? '#1E8E3E' : '#5F6368';
   return L.divIcon({
     className: 'msv-stop-marker',
-    html: `<div style="width:${size}px;height:${size}px;border-radius:9999px;background:${bg};color:${textColor};display:flex;align-items:center;justify-content:center;border:2px solid #fff;${ring}">${label}</div>`,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
+    html: `<div style="width:24px;height:24px;border-radius:9999px;background:${bg};color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 2px 5px rgba(0,0,0,0.35);font-weight:700;font-size:11px;">${label}</div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
   });
 }
 
-function createDriverIcon(): L.DivIcon {
+function createDriverIcon(heading: number | null): L.DivIcon {
+  const rot = heading !== null && !Number.isNaN(heading) ? heading : 0;
   return L.divIcon({
     className: 'msv-driver-marker',
-    html: `<div style="width:20px;height:20px;border-radius:9999px;background:#38BDF8;border:3px solid #fff;box-shadow:0 0 0 8px rgba(56,189,248,0.35);"></div>`,
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
+    html: `<div style="width:34px;height:34px;display:flex;align-items:center;justify-content:center;transform:rotate(${rot}deg);">
+      <div style="width:28px;height:28px;border-radius:9999px;background:#1A73E8;border:3px solid #fff;box-shadow:0 0 0 8px rgba(66,133,244,0.28),0 2px 8px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="#ffffff"><path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/></svg>
+      </div>
+    </div>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
   });
+}
+
+function ManeuverIcon({ step }: { step: NavStep }) {
+  const mod = step.maneuverModifier ?? '';
+  if (step.maneuverType === 'arrive') return <Flag className="h-7 w-7 shrink-0 text-white" />;
+  if (mod.includes('left')) return <CornerUpLeft className="h-7 w-7 shrink-0 text-white" />;
+  if (mod.includes('right')) return <CornerUpRight className="h-7 w-7 shrink-0 text-white" />;
+  if (mod === 'uturn') return <RotateCcw className="h-7 w-7 shrink-0 text-white" />;
+  return <ArrowUp className="h-7 w-7 shrink-0 text-white" />;
 }
 
 export function RouteMap({ zone, currentIndex, driverPosition, gpsError }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const routeLayerRef = useRef<L.Polyline | null>(null);
+  const zoneRouteRef = useRef<L.Polyline | null>(null);
+  const activeRouteOutlineRef = useRef<L.Polyline | null>(null);
+  const activeRouteLineRef = useRef<L.Polyline | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const driverMarkerRef = useRef<L.Marker | null>(null);
+  const lastRoutedOriginRef = useRef<[number, number] | null>(null);
+
+  const [followMode, setFollowMode] = useState(true);
+  const [navRoute, setNavRoute] = useState<ActiveNavigationRoute | null>(null);
 
   const currentStop: Stop | undefined = zone.stops[currentIndex];
+  const prevStop: Stop | undefined = currentIndex > 0 ? zone.stops[currentIndex - 1] : undefined;
 
-  // Inicializar mapa una sola vez
+  // Inicializar mapa Leaflet una sola vez
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
@@ -68,10 +103,16 @@ export function RouteMap({ zone, currentIndex, driverPosition, gpsError }: Route
       preferCanvas: true,
     });
 
-    L.tileLayer('https://a.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // Tiles nítidos estilo navegación (cacheados por el Service Worker)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       maxZoom: 19,
+      subdomains: 'abcd',
       crossOrigin: true,
     }).addTo(map);
+
+    map.on('dragstart', () => {
+      setFollowMode(false);
+    });
 
     markersLayerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
@@ -79,21 +120,23 @@ export function RouteMap({ zone, currentIndex, driverPosition, gpsError }: Route
     return () => {
       map.remove();
       mapRef.current = null;
-      routeLayerRef.current = null;
+      zoneRouteRef.current = null;
+      activeRouteOutlineRef.current = null;
+      activeRouteLineRef.current = null;
       markersLayerRef.current = null;
       driverMarkerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Actualizar trazado de ruta cuando cambia la zona
+  // Trazado sutil del resto de la zona
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (routeLayerRef.current) {
-      routeLayerRef.current.remove();
-      routeLayerRef.current = null;
+    if (zoneRouteRef.current) {
+      zoneRouteRef.current.remove();
+      zoneRouteRef.current = null;
     }
 
     const coords =
@@ -104,16 +147,120 @@ export function RouteMap({ zone, currentIndex, driverPosition, gpsError }: Route
             .map((s) => [s.lat as number, s.lng as number] as [number, number]);
 
     if (coords.length > 1) {
-      routeLayerRef.current = L.polyline(coords, {
-        color: '#F59E0B',
-        weight: 5,
-        opacity: 0.85,
-        dashArray: zone.route?.isFallback ? '8 8' : undefined,
+      zoneRouteRef.current = L.polyline(coords, {
+        color: '#94A3B8',
+        weight: 4,
+        opacity: 0.55,
+        dashArray: '6 8',
       }).addTo(map);
     }
   }, [zone]);
 
-  // Actualizar marcadores de paradas y centrar en la parada actual
+  // Calcular ruta paso a paso estilo Google Maps hacia el destino actual
+  useEffect(() => {
+    if (!currentStop || currentStop.lat === null || currentStop.lng === null) {
+      setNavRoute(null);
+      return;
+    }
+
+    const dest: [number, number] = [currentStop.lat, currentStop.lng];
+    let origin: [number, number] | null = null;
+
+    if (driverPosition) {
+      origin = [driverPosition.lat, driverPosition.lng];
+    } else if (prevStop && prevStop.lat !== null && prevStop.lng !== null) {
+      origin = [prevStop.lat, prevStop.lng];
+    } else if (zone.stops.length > 1) {
+      const nextFallback = zone.stops.find(
+        (s) => s.id !== currentStop.id && s.lat !== null && s.lng !== null
+      );
+      if (nextFallback) {
+        origin = [nextFallback.lat as number, nextFallback.lng as number];
+      }
+    }
+
+    if (!origin) {
+      setNavRoute(null);
+      return;
+    }
+
+    // Evitar recálculos innecesarios si el conductor se movió menos de 25 metros
+    if (
+      lastRoutedOriginRef.current &&
+      haversineMeters(lastRoutedOriginRef.current, origin) < 25 &&
+      navRoute !== null
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    lastRoutedOriginRef.current = origin;
+
+    fetchTurnByTurnRoute(origin, dest).then((result) => {
+      if (!cancelled) {
+        setNavRoute(result);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentStop?.id,
+    currentStop?.lat,
+    currentStop?.lng,
+    driverPosition?.lat,
+    driverPosition?.lng,
+  ]);
+
+  // Resetear origen cacheado al cambiar de parada
+  useEffect(() => {
+    lastRoutedOriginRef.current = null;
+  }, [currentIndex, zone.id]);
+
+  // Dibujar la ruta activa azul estilo Google Maps
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (activeRouteOutlineRef.current) {
+      activeRouteOutlineRef.current.remove();
+      activeRouteOutlineRef.current = null;
+    }
+    if (activeRouteLineRef.current) {
+      activeRouteLineRef.current.remove();
+      activeRouteLineRef.current = null;
+    }
+
+    if (!navRoute || navRoute.coordinates.length < 2) return;
+
+    activeRouteOutlineRef.current = L.polyline(navRoute.coordinates, {
+      color: '#174EA6',
+      weight: 9,
+      opacity: 0.9,
+      lineCap: 'round',
+      lineJoin: 'round',
+    }).addTo(map);
+
+    activeRouteLineRef.current = L.polyline(navRoute.coordinates, {
+      color: '#4285F4',
+      weight: 6,
+      opacity: 1,
+      lineCap: 'round',
+      lineJoin: 'round',
+    }).addTo(map);
+
+    if (followMode && !driverPosition) {
+      map.fitBounds(L.latLngBounds(navRoute.coordinates), {
+        paddingTopLeft: [24, 96],
+        paddingBottomRight: [24, 32],
+        maxZoom: 17,
+      });
+    }
+  }, [navRoute, followMode, driverPosition]);
+
+  // Marcadores de paradas
   useEffect(() => {
     const map = mapRef.current;
     const layer = markersLayerRef.current;
@@ -132,15 +279,15 @@ export function RouteMap({ zone, currentIndex, driverPosition, gpsError }: Route
       marker.addTo(layer);
     });
 
-    if (currentStop && currentStop.lat !== null && currentStop.lng !== null) {
+    if (followMode && currentStop && currentStop.lat !== null && currentStop.lng !== null && !driverPosition) {
       map.setView([currentStop.lat, currentStop.lng], Math.max(map.getZoom(), 16), {
         animate: true,
-        duration: 0.45,
+        duration: 0.4,
       });
     }
-  }, [zone, currentIndex, currentStop]);
+  }, [zone, currentIndex, currentStop, followMode, driverPosition]);
 
-  // Actualizar marcador del conductor de forma imperativa (bajo consumo)
+  // Marcador del conductor + seguimiento automático
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !driverPosition) return;
@@ -148,24 +295,34 @@ export function RouteMap({ zone, currentIndex, driverPosition, gpsError }: Route
     const latLng: [number, number] = [driverPosition.lat, driverPosition.lng];
     if (!driverMarkerRef.current) {
       driverMarkerRef.current = L.marker(latLng, {
-        icon: createDriverIcon(),
+        icon: createDriverIcon(driverPosition.heading),
         zIndexOffset: 2000,
       }).addTo(map);
     } else {
       driverMarkerRef.current.setLatLng(latLng);
+      driverMarkerRef.current.setIcon(createDriverIcon(driverPosition.heading));
     }
-  }, [driverPosition]);
 
-  const handleCenterDriver = () => {
-    const map = mapRef.current;
-    if (!map || !driverPosition) return;
-    map.setView([driverPosition.lat, driverPosition.lng], 17, { animate: true });
-  };
+    if (followMode) {
+      map.setView(latLng, Math.max(map.getZoom(), 17), { animate: true, duration: 0.4 });
+    }
+  }, [driverPosition, followMode]);
 
-  const handleCenterStop = () => {
+  const handleRecenter = () => {
     const map = mapRef.current;
-    if (!map || !currentStop || currentStop.lat === null || currentStop.lng === null) return;
-    map.setView([currentStop.lat, currentStop.lng], 17, { animate: true });
+    if (!map) return;
+    setFollowMode(true);
+    if (driverPosition) {
+      map.setView([driverPosition.lat, driverPosition.lng], 17, { animate: true });
+    } else if (navRoute && navRoute.coordinates.length > 1) {
+      map.fitBounds(L.latLngBounds(navRoute.coordinates), {
+        paddingTopLeft: [24, 96],
+        paddingBottomRight: [24, 32],
+        maxZoom: 17,
+      });
+    } else if (currentStop && currentStop.lat !== null && currentStop.lng !== null) {
+      map.setView([currentStop.lat, currentStop.lng], 17, { animate: true });
+    }
   };
 
   const openExternalMaps = () => {
@@ -181,45 +338,73 @@ export function RouteMap({ zone, currentIndex, driverPosition, gpsError }: Route
     );
   };
 
+  // Elegir la próxima maniobra relevante
+  const nextStep: NavStep | null =
+    navRoute && navRoute.steps.length > 0
+      ? navRoute.steps.find((s, i) => i > 0 && s.distanceMeters > 10) ?? navRoute.steps[0]
+      : null;
+
   return (
-    <div className="relative h-full w-full bg-surface-900">
+    <div className="relative h-full w-full bg-slate-200">
       <div ref={containerRef} className="h-full w-full z-0" />
 
-      {gpsError && (
-        <div className="pointer-events-none absolute left-3 top-3 z-[400] rounded-lg bg-surface-950/90 px-3 py-1.5 text-xs font-medium text-amber-300 border border-amber-500/40">
+      {/* Banner superior de navegación paso a paso estilo Google Maps */}
+      {nextStep && navRoute && (
+        <div className="pointer-events-none absolute left-3 right-3 top-3 z-[400]">
+          <div className="flex items-center gap-3 rounded-2xl bg-[#0F766E] px-4 py-3 text-white shadow-xl ring-1 ring-black/15">
+            <ManeuverIcon step={nextStep} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-lg font-extrabold leading-none">
+                  {formatDistanceEs(nextStep.distanceMeters || navRoute.distanceMeters)}
+                </span>
+                <span className="text-xs font-medium text-teal-100">
+                  · {formatDurationEs(navRoute.durationSeconds)} ({formatDistanceEs(navRoute.distanceMeters)})
+                </span>
+              </div>
+              <p className="mt-1 truncate text-sm font-semibold text-white/95">
+                {nextStep.instruction}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {gpsError && !nextStep && (
+        <div className="pointer-events-none absolute left-3 top-3 z-[400] rounded-xl bg-slate-900/90 px-3 py-1.5 text-xs font-medium text-white shadow">
           {gpsError}
         </div>
       )}
 
-      {/* Botones táctiles flotantes de control de mapa */}
-      <div className="absolute bottom-3 right-3 z-[400] flex flex-col gap-2">
+      {/* Botón "Recentrar" estilo Google Maps cuando se mueve el mapa */}
+      {!followMode && (
         <button
           type="button"
-          onClick={handleCenterStop}
-          disabled={!currentStop || currentStop.lat === null}
-          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-500 text-surface-950 shadow-lg active:scale-95 disabled:opacity-40"
-          aria-label="Centrar en parada actual"
-          title="Centrar en parada actual"
+          onClick={handleRecenter}
+          className="absolute bottom-4 left-3 z-[400] flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-bold text-[#1A73E8] shadow-lg ring-1 ring-black/10 active:scale-95"
         >
-          <MapPin className="h-6 w-6" />
+          <Navigation className="h-4 w-4 fill-current" />
+          Recentrar
         </button>
+      )}
 
+      {/* Botones flotantes derechos (Centrar GPS + Abrir Google Maps) */}
+      <div className="absolute bottom-4 right-3 z-[400] flex flex-col gap-2">
         <button
           type="button"
-          onClick={handleCenterDriver}
-          disabled={!driverPosition}
-          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-950/95 text-sky-400 border border-sky-400/50 shadow-lg active:scale-95 disabled:opacity-40"
-          aria-label="Centrar en mi ubicación"
-          title="Centrar en mi ubicación"
+          onClick={handleRecenter}
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-800 shadow-lg ring-1 ring-black/10 active:scale-95"
+          aria-label="Centrar ruta"
+          title="Centrar ruta"
         >
-          <Crosshair className="h-6 w-6" />
+          <Crosshair className="h-5 w-5 text-[#1A73E8]" />
         </button>
 
         <button
           type="button"
           onClick={openExternalMaps}
           disabled={!currentStop}
-          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-950/95 text-white border border-slate-600 shadow-lg active:scale-95 disabled:opacity-40"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-slate-800 shadow-lg ring-1 ring-black/10 active:scale-95 disabled:opacity-40"
           aria-label="Abrir en Google Maps"
           title="Abrir en Google Maps"
         >

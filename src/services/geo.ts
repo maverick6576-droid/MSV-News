@@ -1,5 +1,5 @@
 import { getCachedGeocode, getCachedRoute, setCachedGeocode, setCachedRoute } from './db';
-import type { RouteGeometry, Stop, SyncProgress, Zone } from '../types';
+import type { ActiveNavigationRoute, NavStep, RouteGeometry, Stop, SyncProgress, Zone } from '../types';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -187,6 +187,129 @@ export async function precacheTilesForZones(zones: Zone[]): Promise<void> {
     const batch = urls.slice(i, i + batchSize);
     await Promise.allSettled(batch.map((u) => fetch(u, { mode: 'cors' })));
   }
+}
+
+export function formatDistanceEs(meters: number): string {
+  if (meters < 1000) {
+    return `${Math.max(10, Math.round(meters / 10) * 10)} m`;
+  }
+  return `${(meters / 1000).toFixed(1)} km`;
+}
+
+export function formatDurationEs(seconds: number): string {
+  const mins = Math.max(1, Math.round(seconds / 60));
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h} h ${m} min` : `${h} h`;
+}
+
+function buildSpanishInstruction(type: string, modifier: string | undefined, street: string): string {
+  const via = street ? ` en ${street}` : '';
+  switch (type) {
+    case 'depart':
+      return street ? `Sal por ${street}` : 'Inicia la marcha';
+    case 'arrive':
+      return 'Llegada a tu destino';
+    case 'roundabout':
+    case 'rotary':
+      return street ? `En la rotonda, toma salida hacia ${street}` : 'Toma la rotonda';
+    case 'turn':
+    case 'end of road':
+    case 'fork':
+    case 'on ramp':
+    case 'off ramp':
+      if (modifier === 'left') return `Gira a la izquierda${via}`;
+      if (modifier === 'right') return `Gira a la derecha${via}`;
+      if (modifier === 'sharp left') return `Giro cerrado a la izquierda${via}`;
+      if (modifier === 'sharp right') return `Giro cerrado a la derecha${via}`;
+      if (modifier === 'slight left') return `Mantente a la izquierda${via}`;
+      if (modifier === 'slight right') return `Mantente a la derecha${via}`;
+      if (modifier === 'uturn') return `Haz un cambio de sentido${via}`;
+      return `Continúa recto${via}`;
+    case 'continue':
+    case 'new name':
+      return `Continúa${via}`;
+    default:
+      return street ? `Sigue por ${street}` : 'Continúa por la ruta';
+  }
+}
+
+export async function fetchTurnByTurnRoute(
+  origin: [number, number],
+  destination: [number, number]
+): Promise<ActiveNavigationRoute> {
+  const distDirect = haversineMeters(origin, destination);
+
+  if (navigator.onLine) {
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${origin[1]},${origin[0]};${destination[1]},${destination[0]}?overview=full&geometries=geojson&steps=true`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = (await res.json()) as {
+          routes?: Array<{
+            distance: number;
+            duration: number;
+            geometry: { coordinates: [number, number][] };
+            legs?: Array<{
+              steps?: Array<{
+                name?: string;
+                distance: number;
+                maneuver: {
+                  type: string;
+                  modifier?: string;
+                  location: [number, number];
+                };
+              }>;
+            }>;
+          }>;
+        };
+
+        const first = data.routes?.[0];
+        if (first && first.geometry?.coordinates?.length > 1) {
+          const rawSteps = first.legs?.[0]?.steps ?? [];
+          const steps: NavStep[] = rawSteps.map((s) => {
+            const street = (s.name ?? '').trim();
+            return {
+              instruction: buildSpanishInstruction(s.maneuver.type, s.maneuver.modifier, street),
+              maneuverType: s.maneuver.type,
+              maneuverModifier: s.maneuver.modifier,
+              streetName: street,
+              distanceMeters: Math.round(s.distance),
+              location: [s.maneuver.location[1], s.maneuver.location[0]],
+            };
+          });
+
+          return {
+            coordinates: first.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
+            distanceMeters: Math.round(first.distance),
+            durationSeconds: Math.round(first.duration),
+            steps,
+            isFallback: false,
+          };
+        }
+      }
+    } catch {
+      // Fallback offline limpio
+    }
+  }
+
+  return {
+    coordinates: [origin, destination],
+    distanceMeters: Math.round(distDirect),
+    durationSeconds: Math.max(60, Math.round(distDirect / 5.5)),
+    steps: [
+      {
+        instruction: 'Dirígete hacia el destino (modo offline)',
+        maneuverType: 'continue',
+        maneuverModifier: 'straight',
+        streetName: '',
+        distanceMeters: Math.round(distDirect),
+        location: destination,
+      },
+    ],
+    isFallback: true,
+  };
 }
 
 export async function enrichZonesGeoAndRoutes(

@@ -1,8 +1,6 @@
 import {
   CheckCircle2,
   ChevronRight,
-  MapPin,
-  Newspaper,
   RefreshCw,
   Settings,
   Wifi,
@@ -23,9 +21,9 @@ interface ZoneSelectorProps {
 }
 
 function formatSyncTime(ts: number | null): string {
-  if (!ts) return 'Datos precargados';
+  if (!ts) return 'Sin sincronizar';
   const d = new Date(ts);
-  return `Sincronizado ${d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
+  return `Actualizado ${d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 export function ZoneSelector({
@@ -45,18 +43,13 @@ export function ZoneSelector({
     syncProgress.stage !== 'error';
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-surface-950 text-white">
-      {/* Cabecera */}
-      <header className="sticky top-0 z-20 border-b border-slate-800 bg-surface-950/95 px-4 pb-3 pt-4 backdrop-blur">
-        <div className="mx-auto flex max-w-2xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-500 text-surface-950">
-              <Newspaper className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-xl font-extrabold leading-tight">MSV News</h1>
-              <p className="text-xs text-slate-400">Hola, {driverName}</p>
-            </div>
+    <div className="flex min-h-[100dvh] flex-col bg-[#0B0F17] text-white">
+      {/* Cabecera limpia estilo app nativa */}
+      <header className="sticky top-0 z-20 bg-[#0B0F17]/95 px-5 pb-4 pt-5 backdrop-blur">
+        <div className="mx-auto flex max-w-xl items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium text-slate-400">{driverName}</p>
+            <h1 className="text-2xl font-bold tracking-tight text-white">Zonas de reparto</h1>
           </div>
 
           <div className="flex items-center gap-2">
@@ -64,53 +57,53 @@ export function ZoneSelector({
               type="button"
               onClick={onSyncNow}
               disabled={!isOnline || isSyncing}
-              className="flex h-11 items-center gap-2 rounded-xl border border-slate-700 bg-surface-800 px-3 text-sm font-bold text-white active:scale-95 disabled:opacity-40"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-slate-200 ring-1 ring-white/10 active:scale-95 disabled:opacity-35"
               aria-label="Sincronizar ahora"
+              title="Sincronizar ahora"
             >
-              <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin text-brand-400' : ''}`} />
-              <span className="hidden sm:inline">Sincronizar</span>
+              <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin text-[#4285F4]' : ''}`} />
             </button>
 
             <button
               type="button"
               onClick={onOpenSettings}
-              className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-surface-800 text-white active:scale-95"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-slate-200 ring-1 ring-white/10 active:scale-95"
               aria-label="Ajustes"
+              title="Ajustes"
             >
-              <Settings className="h-5 w-5" />
+              <Settings className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        {/* Estado de red y última sincronización */}
-        <div className="mx-auto mt-3 flex max-w-2xl items-center justify-between rounded-xl bg-surface-900 px-3 py-2 text-xs">
-          <div className="flex items-center gap-2 font-semibold">
+        {/* Estado discreto de red */}
+        <div className="mx-auto mt-3 flex max-w-xl items-center justify-between text-xs text-slate-400">
+          <span className="inline-flex items-center gap-1.5 font-medium">
             {isOnline ? (
               <>
-                <Wifi className="h-4 w-4 text-emerald-400" />
-                <span className="text-emerald-400">Online</span>
+                <Wifi className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="text-emerald-400">En línea</span>
               </>
             ) : (
               <>
-                <WifiOff className="h-4 w-4 text-amber-400" />
-                <span className="text-amber-300">Offline · Datos guardados</span>
+                <WifiOff className="h-3.5 w-3.5 text-amber-400" />
+                <span className="text-amber-300">Modo offline · Datos locales</span>
               </>
             )}
-          </div>
-          <span className="text-slate-400">{formatSyncTime(lastSync)}</span>
+          </span>
+          <span>{formatSyncTime(lastSync)}</span>
         </div>
 
-        {/* Barra de progreso de sincronización */}
         {syncProgress.stage !== 'idle' && (
-          <div className="mx-auto mt-2 max-w-2xl rounded-xl border border-slate-700 bg-surface-900 p-3">
-            <div className="flex items-center justify-between text-xs font-semibold">
+          <div className="mx-auto mt-3 max-w-xl rounded-2xl bg-[#141B29] p-3 ring-1 ring-white/10">
+            <div className="flex items-center justify-between text-xs font-medium">
               <span
                 className={
                   syncProgress.stage === 'error'
                     ? 'text-rose-400'
                     : syncProgress.stage === 'done'
                       ? 'text-emerald-400'
-                      : 'text-brand-400'
+                      : 'text-slate-200'
                 }
               >
                 {syncProgress.message}
@@ -118,9 +111,9 @@ export function ZoneSelector({
               {isSyncing && <span className="text-slate-400">{syncProgress.percent}%</span>}
             </div>
             {isSyncing && (
-              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-surface-800">
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
                 <div
-                  className="h-full bg-brand-500 transition-all duration-300"
+                  className="h-full bg-[#4285F4] transition-all duration-300"
                   style={{ width: `${syncProgress.percent}%` }}
                 />
               </div>
@@ -130,18 +123,12 @@ export function ZoneSelector({
       </header>
 
       {/* Lista de zonas */}
-      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-3 px-4 py-5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-400">
-            Zonas de reparto ({zones.length})
-          </h2>
-        </div>
-
+      <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-2.5 px-5 pb-8 pt-2">
         {zones.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-700 bg-surface-900 p-8 text-center">
-            <p className="text-base font-semibold text-slate-300">No hay zonas sincronizadas</p>
-            <p className="mt-1 text-sm text-slate-500">
-              Pulsa en Ajustes para conectar tu Google Sheet o sincroniza con conexión.
+          <div className="mt-8 rounded-2xl bg-[#141B29] p-8 text-center ring-1 ring-white/5">
+            <p className="text-base font-semibold text-slate-200">Sin zonas disponibles</p>
+            <p className="mt-1 text-sm text-slate-400">
+              Conecta tu Google Sheet en Ajustes y pulsa sincronizar.
             </p>
           </div>
         ) : (
@@ -157,36 +144,38 @@ export function ZoneSelector({
                 key={zone.id}
                 type="button"
                 onClick={() => onSelectZone(zone)}
-                className="flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-surface-900 p-5 text-left shadow-md transition active:scale-[0.98] active:border-brand-500"
+                className="flex w-full items-center justify-between gap-4 rounded-2xl bg-[#141B29] px-4 py-4 text-left ring-1 ring-white/5 transition active:scale-[0.98] active:bg-[#1B2436]"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <h3 className="truncate text-xl font-extrabold text-white">{zone.name}</h3>
+                    <h2 className="truncate text-lg font-bold text-white">{zone.name}</h2>
                     {isCompleted && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-bold text-emerald-300">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Completada
-                      </span>
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
                     )}
                   </div>
 
-                  <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-400">
-                    <span className="inline-flex items-center gap-1.5 font-medium text-slate-300">
-                      <MapPin className="h-4 w-4 text-brand-400" />
+                  <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+                    <span>
                       {total} {total === 1 ? 'parada' : 'paradas'}
                     </span>
-                    {km && <span>· {km} km</span>}
+                    {km && (
+                      <>
+                        <span>·</span>
+                        <span>{km} km</span>
+                      </>
+                    )}
                     {prog && !isCompleted && current > 0 && (
-                      <span className="rounded-md bg-brand-500/20 px-2 py-0.5 text-xs font-bold text-brand-400">
-                        En parada {current}/{total}
-                      </span>
+                      <>
+                        <span>·</span>
+                        <span className="font-semibold text-[#60A5FA]">
+                          Parada {current}/{total}
+                        </span>
+                      </>
                     )}
                   </div>
                 </div>
 
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-500 text-surface-950">
-                  <ChevronRight className="h-7 w-7" />
-                </div>
+                <ChevronRight className="h-5 w-5 shrink-0 text-slate-500" />
               </button>
             );
           })
