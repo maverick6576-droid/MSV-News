@@ -89,20 +89,22 @@ export function ZoneSelector({
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-[#060606] text-white">
-      {/* Cabecera corporativa Negro + Dorado */}
-      <header className="sticky top-0 z-20 border-b border-[#D4AF37]/15 bg-black/95 px-5 pb-4 pt-4 backdrop-blur">
+      {/* Cabecera corporativa respetando la barra de estado del móvil */}
+      <header className="safe-top sticky top-0 z-20 border-b border-[#D4AF37]/20 bg-black/95 px-4 pb-3.5 backdrop-blur">
         <div className="mx-auto flex max-w-xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-3">
             <img
               src="./logo-msv.png"
               alt="MSV"
-              className="h-11 w-16 shrink-0 rounded-lg border border-[#D4AF37]/30 bg-black object-cover"
+              className="h-11 w-14 shrink-0 rounded-lg border border-[#D4AF37]/35 bg-black object-cover"
             />
-            <div className="min-w-0">
-              <p className="truncate text-xs font-medium text-[#E5C158]">{driverName}</p>
-              <h1 className="truncate text-xl font-bold tracking-tight text-white">
-                Zonas de reparto
+            <div>
+              <h1 className="whitespace-nowrap text-xl font-extrabold tracking-wide text-white">
+                MSV <span className="text-[#E5C158]">NEWS</span>
               </h1>
+              <p className="max-w-[160px] truncate text-xs font-medium text-neutral-400">
+                {driverName}
+              </p>
             </div>
           </div>
 
@@ -121,7 +123,7 @@ export function ZoneSelector({
             <button
               type="button"
               onClick={onOpenSettings}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#141414] text-neutral-200 ring-1 ring-white/10 active:scale-95"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#141414] text-neutral-200 ring-1 ring-white/15 active:scale-95"
               aria-label="Ajustes"
               title="Ajustes"
             >
@@ -177,34 +179,39 @@ export function ZoneSelector({
       </header>
 
       {/* Contenido principal */}
-      <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-3 px-5 pb-8 pt-4">
+      <main className="safe-bottom mx-auto flex w-full max-w-xl flex-1 flex-col gap-4 px-4 pt-4">
         {/* Resumen global de carga cuando hay varias zonas */}
         {zones.length > 1 && globalSummary.total > 0 && (
-          <section className="rounded-2xl bg-[#111111] p-4 ring-1 ring-[#D4AF37]/25">
+          <section className="rounded-2xl bg-[#111111] p-4 ring-1 ring-[#D4AF37]/30">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#E5C158]">
                 <Newspaper className="h-4 w-4" />
-                Total a preparar ({zones.length} zonas)
+                Carga total ({zones.length} zonas)
               </div>
-              <span className="rounded-full bg-[#D4AF37]/15 px-2.5 py-0.5 text-xs font-extrabold text-[#F3DC8B]">
+              <span className="rounded-full bg-[#D4AF37]/20 px-3 py-1 text-sm font-extrabold text-[#F3DC8B] tabular-nums">
                 {globalSummary.total} uds
               </span>
             </div>
-            <div className="mt-2.5 flex flex-wrap gap-1.5">
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
               {globalSummary.items.map((item) => (
-                <span
+                <div
                   key={item.name}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-black/70 px-2.5 py-1 text-xs font-semibold text-neutral-200 ring-1 ring-white/10"
+                  className="flex items-center justify-between gap-2 rounded-xl bg-black/80 px-3 py-2.5 ring-1 ring-white/10"
                 >
-                  <span>{item.name}</span>
-                  <span className="font-extrabold text-[#E5C158]">×{item.count}</span>
-                </span>
+                  <span className="truncate text-sm font-semibold text-neutral-100">
+                    {item.name}
+                  </span>
+                  <span className="shrink-0 text-lg font-extrabold text-[#F3DC8B] tabular-nums">
+                    {item.count}
+                  </span>
+                </div>
               ))}
             </div>
           </section>
         )}
 
-        {/* Lista de zonas con desglose de periódicos por zona */}
+        {/* Lista de zonas con desglose grande y claro de periódicos (preparado para 10+ tipos) */}
         {zones.length === 0 ? (
           <div className="mt-8 rounded-2xl bg-[#111111] p-8 text-center ring-1 ring-[#D4AF37]/20">
             <p className="text-base font-semibold text-neutral-200">Sin zonas disponibles</p>
@@ -225,24 +232,24 @@ export function ZoneSelector({
                 key={zone.id}
                 type="button"
                 onClick={() => onSelectZone(zone)}
-                className="flex w-full flex-col gap-3 rounded-2xl bg-[#111111] p-4 text-left ring-1 ring-[#D4AF37]/20 transition active:scale-[0.99] active:bg-[#191919] active:ring-[#D4AF37]/50"
+                className="flex w-full flex-col gap-3.5 rounded-2xl bg-[#111111] p-4 text-left ring-1 ring-[#D4AF37]/25 transition active:scale-[0.99] active:bg-[#191919] active:ring-[#D4AF37]/60"
               >
                 <div className="flex w-full items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <h2 className="truncate text-lg font-bold text-white">{zone.name}</h2>
+                      <h2 className="truncate text-xl font-extrabold text-white">{zone.name}</h2>
                       {isCompleted && (
-                        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                        <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />
                       )}
                     </div>
 
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-neutral-400">
-                      <span>
+                      <span className="font-semibold text-neutral-200">
                         {total} {total === 1 ? 'parada' : 'paradas'}
                       </span>
                       <span>·</span>
-                      <span className="font-semibold text-neutral-300">
-                        {summary.total} {summary.total === 1 ? 'ejemplar' : 'ejemplares'}
+                      <span className="font-bold text-[#E5C158]">
+                        {summary.total} {summary.total === 1 ? 'periódico' : 'periódicos'}
                       </span>
                       {km && (
                         <>
@@ -253,7 +260,7 @@ export function ZoneSelector({
                       {prog && !isCompleted && current > 0 && (
                         <>
                           <span>·</span>
-                          <span className="font-semibold text-[#E5C158]">
+                          <span className="font-semibold text-white">
                             Parada {current}/{total}
                           </span>
                         </>
@@ -261,20 +268,26 @@ export function ZoneSelector({
                     </div>
                   </div>
 
-                  <ChevronRight className="h-5 w-5 shrink-0 text-[#D4AF37]" />
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#D4AF37]/15 text-[#F3DC8B]">
+                    <ChevronRight className="h-5 w-5" />
+                  </div>
                 </div>
 
-                {/* Desglose de periódicos por tipo para preparar el reparto */}
+                {/* Cuadrícula de periódicos grande y clara (hasta 10+ tipos sin apelotonarse) */}
                 {summary.items.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 border-t border-white/5 pt-2.5">
+                  <div className="grid w-full grid-cols-2 gap-2 border-t border-white/10 pt-3">
                     {summary.items.map((item) => (
-                      <span
+                      <div
                         key={item.name}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#D4AF37]/10 px-2.5 py-1 text-xs font-semibold text-neutral-200 ring-1 ring-[#D4AF37]/25"
+                        className="flex items-center justify-between gap-2 rounded-xl bg-black/75 px-3 py-2.5 ring-1 ring-[#D4AF37]/20"
                       >
-                        <span>{item.name}</span>
-                        <span className="font-extrabold text-[#F3DC8B]">×{item.count}</span>
-                      </span>
+                        <span className="truncate text-sm font-semibold text-neutral-100">
+                          {item.name}
+                        </span>
+                        <span className="shrink-0 rounded-md bg-[#D4AF37]/20 px-2 py-0.5 text-base font-extrabold text-[#F3DC8B] tabular-nums">
+                          {item.count}
+                        </span>
+                      </div>
                     ))}
                   </div>
                 )}

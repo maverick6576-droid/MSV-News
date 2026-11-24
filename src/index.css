@@ -7,14 +7,22 @@
   body,
   #root {
     height: 100%;
+    background-color: #000000;
     overscroll-behavior-y: contain;
     -webkit-tap-highlight-color: transparent;
   }
 }
 
-/* Mejorar contraste de tiles OSM en modo oscuro de conducción */
+.safe-top {
+  padding-top: max(env(safe-area-inset-top, 0px), 12px);
+}
+
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
+}
+
 .leaflet-container {
-  background: #0f172a;
+  background: #0c0c0c;
   font-family: inherit;
 }
 
