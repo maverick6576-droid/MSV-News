@@ -19,6 +19,7 @@ import {
   formatDurationEs,
   formatEtaTimeEs,
   haversineMeters,
+  sliceRouteFromDriver,
 } from '../services/geo';
 import { getTileUrl, OFFLINE_TILES_CACHE } from '../services/offlineTiles';
 import type { ActiveNavigationRoute, NavStep, Stop, Zone } from '../types';
@@ -223,8 +224,56 @@ export function RouteMap({ zone, currentIndex, driverPosition, gpsError }: Route
     setFollowMode(true);
   }, [currentIndex, zone.id]);
 
-  // Ruta activa mostrada: override GPS en vivo si existe, sino el tramo precalculado instantáneo
-  const navRoute = liveRouteOverride ?? precomputedLeg;
+  // Ruta activa mostrada: SIEMPRE empezando desde la ubicación real del conductor si existe GPS
+  const navRoute = useMemo<ActiveNavigationRoute | null>(() => {
+    if (!currentStop || currentStop.lat === null || currentStop.lng === null) return null;
+    const dest: [number, number] = [currentStop.lat, currentStop.lng];
+
+    if (driverPosition) {
+      const driverPt: [number, number] = [driverPosition.lat, driverPosition.lng];
+
+      // 1. Si tenemos ruta en vivo calculada desde la ubicación del conductor, usarla recortada desde su punto exacto
+      if (liveRouteOverride) {
+        return sliceRouteFromDriver(liveRouteOverride, driverPt);
+      }
+
+      // 2. Si el conductor está sobre el tramo precalculado (< 65m), recortarlo en 0ms desde su posición actual (sin cola hacia atrás)
+      if (
+        precomputedLeg &&
+        !precomputedLeg.isFallback &&
+        distanceToPolylineMeters(driverPt, precomputedLeg.coordinates) < 65
+      ) {
+        return sliceRouteFromDriver(precomputedLeg, driverPt);
+      }
+
+      // 3. Fallback inmediato desde la ubicación del conductor hasta el destino mientras llega el cálculo OSRM
+      const directDist = haversineMeters(driverPt, dest);
+      return {
+        coordinates: [driverPt, dest],
+        distanceMeters: Math.round(directDist),
+        durationSeconds: Math.max(45, Math.round(directDist / 5.5)),
+        steps: [
+          {
+            instruction: `Dirígete hacia ${currentStop.address}`,
+            maneuverType: 'continue',
+            maneuverModifier: 'straight',
+            streetName: '',
+            distanceMeters: Math.round(directDist),
+            location: dest,
+          },
+        ],
+        isFallback: true,
+      };
+    }
+
+    // Solo si el dispositivo todavía no entregó ninguna posición GPS
+    return liveRouteOverride ?? precomputedLeg;
+  }, [
+    currentStop,
+    driverPosition,
+    liveRouteOverride,
+    precomputedLeg,
+  ]);
 
   // 2. Inicializar mapa Leaflet una sola vez con renderer Canvas a 60 FPS
   useEffect(() => {
@@ -298,68 +347,66 @@ export function RouteMap({ zone, currentIndex, driverPosition, gpsError }: Route
     }
   }, [zone]);
 
-  // 4. Recálculo en vivo desde GPS SOLO cuando hace falta (parada 1 sin tramo previo o desvío > 65m)
+  // 4. Calcular ruta exacta por calles SIEMPRE desde la ubicación actual del conductor hacia el destino
   useEffect(() => {
     if (!currentStop || currentStop.lat === null || currentStop.lng === null) return;
+    if (!driverPosition) return;
+
     const dest: [number, number] = [currentStop.lat, currentStop.lng];
-
-    // Si no tenemos GPS y ya existe el tramo precalculado, no hace falta ninguna llamada de red
-    if (!driverPosition) {
-      if (precomputedLeg) return;
-      // Si no hay tramo precalculado ni GPS, pero hay parada previa con coords, calcular una vez
-      if (prevStop && prevStop.lat !== null && prevStop.lng !== null) {
-        let cancelled = false;
-        fetchTurnByTurnRoute([prevStop.lat, prevStop.lng], dest).then((res) => {
-          if (!cancelled) setLiveRouteOverride(res);
-        });
-        return () => {
-          cancelled = true;
-        };
-      }
-      return;
-    }
-
     const driverPt: [number, number] = [driverPosition.lat, driverPosition.lng];
 
-    // Si ya estamos sobre la ruta precalculada (< 65m), reusarla sin gastar red ni tiempo
+    // Si ya tenemos el tramo precalculado con calles reales y el conductor está encima (< 45m),
+    // sliceRouteFromDriver ya lo dibuja desde su ubicación exacta en 0ms sin gastar red
     if (
+      !liveRouteOverride &&
       precomputedLeg &&
       !precomputedLeg.isFallback &&
-      distanceToPolylineMeters(driverPt, precomputedLeg.coordinates) < 65
+      distanceToPolylineMeters(driverPt, precomputedLeg.coordinates) < 45
     ) {
       return;
     }
 
-    // Evitar recálculos seguidos si el conductor se movió menos de 35m desde el último cálculo
+    // Si ya tenemos una ruta en vivo y el conductor sigue sobre ella (< 45m), sliceRouteFromDriver la actualiza en 0ms
+    if (
+      liveRouteOverride &&
+      !liveRouteOverride.isFallback &&
+      distanceToPolylineMeters(driverPt, liveRouteOverride.coordinates) < 45
+    ) {
+      return;
+    }
+
+    // Evitar recálculos repetidos si se movió menos de 20m desde la última petición
     if (
       lastLiveFetchOriginRef.current &&
-      haversineMeters(lastLiveFetchOriginRef.current, driverPt) < 35
+      haversineMeters(lastLiveFetchOriginRef.current, driverPt) < 20
     ) {
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     lastLiveFetchOriginRef.current = driverPt;
 
-    fetchTurnByTurnRoute(driverPt, dest).then((result) => {
-      if (!cancelled) {
-        setLiveRouteOverride(result);
-      }
-    });
+    fetchTurnByTurnRoute(driverPt, dest, controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          setLiveRouteOverride(result);
+        }
+      })
+      .catch(() => {
+        // Petición abortada al cambiar rápido de parada o fallo de red
+      });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [
     currentStop?.id,
     currentStop?.lat,
     currentStop?.lng,
-    prevStop?.id,
-    prevStop?.lat,
-    prevStop?.lng,
     driverPosition?.lat,
     driverPosition?.lng,
     precomputedLeg,
+    liveRouteOverride,
   ]);
 
   // 5. Dibujar línea azul estilo Google Maps + flechas direccionales blancas
@@ -562,11 +609,15 @@ export function RouteMap({ zone, currentIndex, driverPosition, gpsError }: Route
         </div>
       )}
 
-      {/* Aviso si una dirección concreta no se pudo ubicar */}
+      {/* Aviso discreto mientras se ubica automáticamente la dirección en segundo plano */}
       {missingCoords && (
-        <div className="pointer-events-none absolute left-3 right-3 top-2.5 z-[400] flex items-center gap-2.5 rounded-2xl bg-amber-950/95 px-4 py-3 text-xs font-semibold text-amber-200 shadow-lg ring-1 ring-amber-500/40">
-          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
-          <span>Dirección sin coordenadas aún. Pulsa Sincronizar o ábrela en Google Maps.</span>
+        <div className="pointer-events-none absolute left-3 right-3 top-2.5 z-[400] flex items-center gap-2.5 rounded-2xl bg-black/85 px-4 py-3 text-xs font-semibold text-[#F3DC8B] shadow-lg ring-1 ring-[#D4AF37]/40">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-[#D4AF37]" />
+          <span>
+            {navigator.onLine
+              ? 'Ubicando dirección en el mapa...'
+              : 'Dirección sin ubicación guardada. Puedes abrirla en Google Maps.'}
+          </span>
         </div>
       )}
 

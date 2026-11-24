@@ -180,3 +180,18 @@ export async function saveSession(session: DriverSession | null): Promise<void> 
     await db.put('meta', session, 'session');
   }
 }
+
+export async function getActiveZoneId(): Promise<string | null> {
+  const db = await getDb();
+  const saved = (await db.get('meta', 'activeZoneId')) as string | undefined;
+  return saved ?? null;
+}
+
+export async function saveActiveZoneId(zoneId: string | null): Promise<void> {
+  const db = await getDb();
+  if (!zoneId) {
+    await db.delete('meta', 'activeZoneId');
+  } else {
+    await db.put('meta', zoneId, 'activeZoneId');
+  }
+}

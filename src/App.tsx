@@ -6,16 +6,18 @@ import { ZoneSelector } from './components/ZoneSelector';
 import { useNetworkStatus } from './hooks/useNetworkStatus';
 import {
   DEFAULT_SETTINGS,
+  getActiveZoneId,
   getAllProgress,
   getAllZones,
   getSession,
   getSettings,
+  saveActiveZoneId,
   saveAllZones,
   saveSession,
   saveSettings,
   saveZoneProgress,
 } from './services/db';
-import { enrichZonesGeoAndRoutes } from './services/geo';
+import { enrichZonesGeoAndRoutes, geocodeAddress } from './services/geo';
 import { fetchZonesFromFixedSheet } from './services/sheets';
 import { speakStop, stopSpeaking } from './services/tts';
 import type { AppSettings, DriverSession, SyncProgress, Zone, ZoneProgress } from './types';
@@ -30,24 +32,32 @@ export default function App() {
   const [activeZoneId, setActiveZoneId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const autoSyncedRef = useRef(false);
+  const zonesRef = useRef<Zone[]>([]);
+  const priorityGeocodingRef = useRef<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<SyncProgress>({
     stage: 'idle',
     message: '',
     percent: 0,
   });
 
-  // Cargar datos locales desde IndexedDB al iniciar (funciona 100% sin Wi-Fi)
+  useEffect(() => {
+    zonesRef.current = zones;
+  }, [zones]);
+
+  // Cargar datos locales + zona activa desde IndexedDB al iniciar (funciona 100% sin Wi-Fi)
   useEffect(() => {
     let cancelled = false;
 
     async function hydrate() {
       try {
-        const [savedSession, savedSettings, savedZones, savedProgress] = await Promise.all([
-          getSession(),
-          getSettings(),
-          getAllZones(),
-          getAllProgress(),
-        ]);
+        const [savedSession, savedSettings, savedZones, savedProgress, savedActiveZoneId] =
+          await Promise.all([
+            getSession(),
+            getSettings(),
+            getAllZones(),
+            getAllProgress(),
+            getActiveZoneId(),
+          ]);
 
         if (cancelled) return;
 
@@ -62,7 +72,13 @@ export default function App() {
         if (realZones.length !== savedZones.length) {
           await saveAllZones(realZones);
         }
+        zonesRef.current = realZones;
         setZones(realZones);
+
+        // Restaurar la zona donde estaba trabajando el conductor para no expulsarlo jamás al selector
+        if (savedActiveZoneId && realZones.some((z) => z.id === savedActiveZoneId)) {
+          setActiveZoneId(savedActiveZoneId);
+        }
       } finally {
         if (!cancelled) setHydrated(true);
       }
@@ -103,7 +119,7 @@ export default function App() {
       try {
         setSyncProgress({
           stage: 'fetching_sheets',
-          message: 'Leyendo hojas de la Google Sheet...',
+          message: 'Actualizando hojas en segundo plano...',
           percent: 10,
         });
 
@@ -113,11 +129,14 @@ export default function App() {
           cfg.sheet.cityHint,
           setSyncProgress,
           (partialZones) => {
+            zonesRef.current = partialZones;
             setZones(partialZones);
             void saveAllZones(partialZones);
-          }
+          },
+          zonesRef.current
         );
 
+        zonesRef.current = enriched;
         await saveAllZones(enriched);
         setZones(enriched);
 
@@ -143,7 +162,7 @@ export default function App() {
     [settings]
   );
 
-  // Auto-sincronizar al abrir la app si hay conexión
+  // Auto-sincronizar en segundo plano al abrir la app si hay conexión (sin bloquear la operación)
   useEffect(() => {
     if (!hydrated || !isOnline || autoSyncedRef.current) return;
     autoSyncedRef.current = true;
@@ -151,6 +170,69 @@ export default function App() {
   }, [hydrated, isOnline, handleSyncNow, settings]);
 
   const activeZone = zones.find((z) => z.id === activeZoneId) ?? null;
+  const activeProgress = activeZone ? progressMap[activeZone.id] : undefined;
+
+  // Asegurar que exista registro de progreso si se restauró una zona activa
+  useEffect(() => {
+    if (!activeZone || activeProgress) return;
+    const fresh: ZoneProgress = {
+      zoneId: activeZone.id,
+      currentIndex: 0,
+      completed: false,
+      startedAt: Date.now(),
+      completedAt: null,
+    };
+    setProgressMap((prev) => ({ ...prev, [activeZone.id]: fresh }));
+    void saveZoneProgress(fresh);
+  }, [activeZone, activeProgress]);
+
+  // Geocodificación prioritaria inmediata si la parada actual todavía no tiene coordenadas
+  const currentStop =
+    activeZone && activeProgress ? activeZone.stops[activeProgress.currentIndex] : undefined;
+
+  useEffect(() => {
+    if (
+      !activeZone ||
+      !currentStop ||
+      (currentStop.lat !== null && currentStop.lng !== null) ||
+      !isOnline
+    ) {
+      return;
+    }
+
+    const key = `${activeZone.id}:${currentStop.id}`;
+    if (priorityGeocodingRef.current === key) return;
+    priorityGeocodingRef.current = key;
+
+    let cancelled = false;
+    geocodeAddress(currentStop.address, settings.sheet.cityHint)
+      .then((coords) => {
+        if (cancelled || !coords) return;
+        setZones((prevZones) => {
+          const updated = prevZones.map((z) => {
+            if (z.id !== activeZone.id) return z;
+            return {
+              ...z,
+              stops: z.stops.map((s) =>
+                s.id === currentStop.id ? { ...s, lat: coords.lat, lng: coords.lng } : s
+              ),
+            };
+          });
+          zonesRef.current = updated;
+          void saveAllZones(updated);
+          return updated;
+        });
+      })
+      .finally(() => {
+        if (priorityGeocodingRef.current === key) {
+          priorityGeocodingRef.current = null;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeZone, currentStop, isOnline, settings.sheet.cityHint]);
 
   const ensureProgress = async (zone: Zone): Promise<ZoneProgress> => {
     const existing = progressMap[zone.id];
@@ -180,6 +262,7 @@ export default function App() {
   const handleSelectZone = async (zone: Zone) => {
     const prog = await ensureProgress(zone);
     setActiveZoneId(zone.id);
+    await saveActiveZoneId(zone.id);
     if (!prog.completed && zone.stops[prog.currentIndex]) {
       speakStop(zone.stops[prog.currentIndex], settings.voice);
     }
@@ -264,11 +347,12 @@ export default function App() {
       await saveZoneProgress(reset);
     }
     setActiveZoneId(null);
+    await saveActiveZoneId(null);
   };
 
   if (!hydrated) {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-surface-950 text-brand-400 font-bold">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-black text-[#E5C158] font-bold">
         Cargando MSV News...
       </div>
     );
@@ -282,8 +366,6 @@ export default function App() {
     syncProgress.stage !== 'idle' &&
     syncProgress.stage !== 'done' &&
     syncProgress.stage !== 'error';
-
-  const activeProgress = activeZone ? progressMap[activeZone.id] : undefined;
 
   return (
     <>

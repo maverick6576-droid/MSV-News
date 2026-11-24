@@ -114,20 +114,79 @@ export function haversineMeters(a: [number, number], b: [number, number]): numbe
 }
 
 /**
- * Calcula la distancia mínima en metros desde un punto GPS a una polilínea de ruta.
+ * Calcula la distancia mínima en metros desde un punto GPS a una polilínea de ruta
+ * y devuelve también el índice del vértice más cercano.
  */
+export function findClosestPointOnPolyline(
+  point: [number, number],
+  polyline: [number, number][]
+): { distanceMeters: number; index: number } {
+  if (polyline.length === 0) return { distanceMeters: Infinity, index: 0 };
+  let min = Infinity;
+  let bestIdx = 0;
+  for (let i = 0; i < polyline.length; i++) {
+    const d = haversineMeters(point, polyline[i]);
+    if (d < min) {
+      min = d;
+      bestIdx = i;
+    }
+  }
+  return { distanceMeters: min, index: bestIdx };
+}
+
 export function distanceToPolylineMeters(
   point: [number, number],
   polyline: [number, number][]
 ): number {
-  if (polyline.length === 0) return Infinity;
-  let min = Infinity;
-  // Muestreo rápido sobre vértices de la polilínea (suficiente con precisión < 15m en calles OSRM)
-  for (let i = 0; i < polyline.length; i++) {
-    const d = haversineMeters(point, polyline[i]);
-    if (d < min) min = d;
+  return findClosestPointOnPolyline(point, polyline).distanceMeters;
+}
+
+/**
+ * Recorta una ruta precalculada para que empiece SIEMPRE desde la ubicación exacta del conductor,
+ * eliminando cualquier cola desde el punto anterior y recalculando distancia/duración restante.
+ */
+export function sliceRouteFromDriver(
+  route: ActiveNavigationRoute,
+  driverPos: [number, number]
+): ActiveNavigationRoute {
+  if (route.coordinates.length < 2) return route;
+
+  const { index } = findClosestPointOnPolyline(driverPos, route.coordinates);
+  const remainingCoords: [number, number][] = [driverPos, ...route.coordinates.slice(index + 1)];
+  if (remainingCoords.length < 2) {
+    remainingCoords.push(route.coordinates[route.coordinates.length - 1]);
   }
-  return min;
+
+  let remainingDist = 0;
+  for (let i = 1; i < remainingCoords.length; i++) {
+    remainingDist += haversineMeters(remainingCoords[i - 1], remainingCoords[i]);
+  }
+
+  const ratio =
+    route.distanceMeters > 0 ? Math.min(1, Math.max(0.05, remainingDist / route.distanceMeters)) : 1;
+
+  // Filtrar pasos que ya quedaron atrás del conductor (si hay varios)
+  let remainingSteps = route.steps;
+  if (route.steps.length > 2) {
+    let bestStepIdx = 0;
+    let bestStepDist = Infinity;
+    for (let i = 0; i < route.steps.length; i++) {
+      const d = haversineMeters(driverPos, route.steps[i].location);
+      if (d < bestStepDist) {
+        bestStepDist = d;
+        bestStepIdx = i;
+      }
+    }
+    remainingSteps = route.steps.slice(bestStepIdx);
+  }
+
+  return {
+    ...route,
+    coordinates: remainingCoords,
+    distanceMeters: Math.round(remainingDist),
+    durationSeconds: Math.max(30, Math.round(route.durationSeconds * ratio)),
+    steps: remainingSteps,
+  };
 }
 
 const cityCenterMemoryCache = new Map<string, { lat: number; lng: number }>();
@@ -564,7 +623,8 @@ const liveTbtMemoryCache = new Map<string, ActiveNavigationRoute>();
 
 export async function fetchTurnByTurnRoute(
   origin: [number, number],
-  destination: [number, number]
+  destination: [number, number],
+  signal?: AbortSignal
 ): Promise<ActiveNavigationRoute> {
   const distDirect = haversineMeters(origin, destination);
   const tbtCacheKey = `tbt:${origin[0].toFixed(4)},${origin[1].toFixed(4)}->${destination[0].toFixed(4)},${destination[1].toFixed(4)}`;
@@ -581,7 +641,7 @@ export async function fetchTurnByTurnRoute(
   if (navigator.onLine) {
     try {
       const url = `https://router.project-osrm.org/route/v1/driving/${origin[1]},${origin[0]};${destination[1]},${destination[0]}?overview=full&geometries=geojson&steps=true`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       if (res.ok) {
         const data = (await res.json()) as OsrmRouteResponse;
         const first = data.routes?.[0];
@@ -597,7 +657,10 @@ export async function fetchTurnByTurnRoute(
           return navResult;
         }
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw err;
+      }
       // Fallback
     }
   }
@@ -629,69 +692,121 @@ export async function enrichZonesGeoAndRoutes(
   rawZones: Zone[],
   cityHint: string,
   onProgress?: (progress: SyncProgress) => void,
-  onPartialZones?: (zones: Zone[]) => void
+  onPartialZones?: (zones: Zone[]) => void,
+  existingZones: Zone[] = []
 ): Promise<Zone[]> {
+  // Mapa rápido de coordenadas y rutas ya guardadas previamente para NO perderlas jamás al sincronizar
+  const existingCoordsByAddress = new Map<string, { lat: number; lng: number }>();
+  const existingZoneById = new Map<string, Zone>();
+  for (const ez of existingZones) {
+    existingZoneById.set(ez.id, ez);
+    for (const s of ez.stops) {
+      if (s.lat !== null && s.lng !== null) {
+        existingCoordsByAddress.set(s.address.trim().toLowerCase(), { lat: s.lat, lng: s.lng });
+        existingCoordsByAddress.set(normalizeCacheKey(s.address, cityHint), { lat: s.lat, lng: s.lng });
+      }
+    }
+  }
+
   const cityCenter = await getCityCenter(cityHint);
 
-  // 1. Hidratar inmediatamente con coordenadas ya guardadas en caché para permitir trabajar al instante
+  // 1. Hidratar inmediatamente preservando coordenadas existentes + caché IndexedDB (0 pérdidas)
   const workingZones: Zone[] = await Promise.all(
     rawZones.map(async (zone) => {
+      const prevZone = existingZoneById.get(zone.id);
       const hydratedStops = await Promise.all(
         zone.stops.map(async (stop) => {
           if (stop.lat !== null && stop.lng !== null) return stop;
+
+          const exactPrev = existingCoordsByAddress.get(stop.address.trim().toLowerCase());
+          if (exactPrev) return { ...stop, lat: exactPrev.lat, lng: exactPrev.lng };
+
           const key = normalizeCacheKey(stop.address, cityHint);
+          const normPrev = existingCoordsByAddress.get(key);
+          if (normPrev) return { ...stop, lat: normPrev.lat, lng: normPrev.lng };
+
           const cached = await getCachedGeocode(key);
           return cached ? { ...stop, lat: cached.lat, lng: cached.lng } : stop;
         })
       );
-      const { route, legs } = await computeZoneRouteAndLegs(hydratedStops);
+
+      // Si ya tenemos ruta/legs previos y el número de paradas coincide, conservarlos inmediatamente
+      const route = prevZone?.route ?? null;
+      const legs = prevZone?.legs ?? {};
       return { ...zone, stops: hydratedStops, route, legs };
     })
   );
 
-  // Mostrar de inmediato en la UI para trabajar mientras se completa la sincronización
+  // Mostrar de inmediato en la UI para operar al instante sin esperar al resto
   onPartialZones?.(workingZones);
 
-  const totalStops = workingZones.reduce((acc, z) => acc + z.stops.length, 0);
-  let processedStops = 0;
+  const stopsNeedingGeo = workingZones.reduce(
+    (acc, z) => acc + z.stops.filter((s) => s.lat === null || s.lng === null).length,
+    0
+  );
+  let geocodedCount = 0;
 
   for (let zIdx = 0; zIdx < workingZones.length; zIdx++) {
     const zone = workingZones[zIdx];
-    const stopsWithCoords: Stop[] = [];
+    const stopsWithCoords: Stop[] = [...zone.stops];
+    let dirtyZone = false;
 
-    for (const stop of zone.stops) {
-      if (stop.lat !== null && stop.lng !== null) {
-        stopsWithCoords.push(stop);
-      } else {
-        onProgress?.({
-          stage: 'geocoding',
-          message: `Ubicando direcciones · ${zone.name} (${processedStops + 1}/${totalStops})`,
-          percent: Math.round(15 + (processedStops / Math.max(1, totalStops)) * 55),
-        });
-        const coords = await geocodeAddress(stop.address, cityHint, cityCenter);
-        stopsWithCoords.push({
+    for (let sIdx = 0; sIdx < stopsWithCoords.length; sIdx++) {
+      const stop = stopsWithCoords[sIdx];
+      if (stop.lat !== null && stop.lng !== null) continue;
+
+      onProgress?.({
+        stage: 'geocoding',
+        message: `Sincronizando en segundo plano · ${zone.name} (${geocodedCount + 1}/${Math.max(1, stopsNeedingGeo)})`,
+        percent: Math.round(15 + (geocodedCount / Math.max(1, stopsNeedingGeo)) * 55),
+      });
+
+      const coords = await geocodeAddress(stop.address, cityHint, cityCenter);
+      if (coords) {
+        stopsWithCoords[sIdx] = {
           ...stop,
-          lat: coords?.lat ?? null,
-          lng: coords?.lng ?? null,
-        });
-        // Pequeña pausa de cortesía para no saturar Photon/Nominatim
-        await sleep(180);
+          lat: coords.lat,
+          lng: coords.lng,
+        };
+        dirtyZone = true;
       }
-      processedStops++;
+      geocodedCount++;
+
+      // Emitir actualizaciones parciales cada 3 paradas nuevas para que aparezcan en el mapa enseguida
+      if (dirtyZone && geocodedCount % 3 === 0) {
+        workingZones[zIdx] = { ...zone, stops: [...stopsWithCoords] };
+        onPartialZones?.([...workingZones]);
+      }
+
+      await sleep(160);
     }
 
-    onProgress?.({
-      stage: 'routing',
-      message: `Trazando calles y giros de ${zone.name}...`,
-      percent: 78,
-    });
-    const { route, legs } = await computeZoneRouteAndLegs(stopsWithCoords);
+    const needsRouting =
+      dirtyZone ||
+      !zone.route ||
+      zone.route.isFallback ||
+      !zone.legs ||
+      Object.keys(zone.legs).length === 0;
+
+    let finalRoute = zone.route;
+    let finalLegs = zone.legs ?? {};
+
+    if (needsRouting) {
+      onProgress?.({
+        stage: 'routing',
+        message: `Actualizando calles y giros de ${zone.name}...`,
+        percent: 78,
+      });
+      const computed = await computeZoneRouteAndLegs(stopsWithCoords);
+      finalRoute = computed.route;
+      finalLegs = computed.legs;
+    }
 
     workingZones[zIdx] = {
       ...zone,
       stops: stopsWithCoords,
-      route,
-      legs,
+      route: finalRoute,
+      legs: finalLegs,
       syncedAt: Date.now(),
     };
 
@@ -700,14 +815,14 @@ export async function enrichZonesGeoAndRoutes(
 
   onProgress?.({
     stage: 'caching_tiles',
-    message: 'Guardando mapa offline de las zonas...',
-    percent: 90,
+    message: 'Guardando mapa offline...',
+    percent: 92,
   });
   await precacheTilesToCacheStorage(workingZones);
 
   onProgress?.({
     stage: 'done',
-    message: 'Rutas y mapas listos (100% offline).',
+    message: 'Sincronizado (100% offline).',
     percent: 100,
   });
 

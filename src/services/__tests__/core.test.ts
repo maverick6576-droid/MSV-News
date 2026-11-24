@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { cleanSpanishAddress, distanceToPolylineMeters, haversineMeters } from '../geo';
+import {
+  cleanSpanishAddress,
+  distanceToPolylineMeters,
+  haversineMeters,
+  sliceRouteFromDriver,
+} from '../geo';
 import { parseNewspapersList, slugifyZone } from '../sheets';
 import { buildStopSpeechMessage } from '../tts';
-import type { Stop } from '../../types';
+import type { ActiveNavigationRoute, Stop } from '../../types';
 
 describe('MSV News core services', () => {
   it('slugifies zone tab names cleanly', () => {
@@ -72,5 +77,25 @@ describe('MSV News core services', () => {
       ]
     );
     expect(polyDist).toBe(0);
+  });
+
+  it('slices a precomputed route so it always starts at the driver location', () => {
+    const route: ActiveNavigationRoute = {
+      coordinates: [
+        [41.538, 2.444],
+        [41.539, 2.445],
+        [41.54, 2.446],
+        [41.541, 2.447],
+      ],
+      distanceMeters: 450,
+      durationSeconds: 90,
+      steps: [],
+      isFallback: false,
+    };
+    const driverPos: [number, number] = [41.5391, 2.4451];
+    const sliced = sliceRouteFromDriver(route, driverPos);
+    expect(sliced.coordinates[0]).toEqual(driverPos);
+    expect(sliced.coordinates).toHaveLength(3);
+    expect(sliced.coordinates[sliced.coordinates.length - 1]).toEqual([41.541, 2.447]);
   });
 });
