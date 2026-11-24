@@ -4,6 +4,7 @@ import {
   setCachedGeocode,
   setCachedRoute,
 } from './db';
+import { precacheTilesToCacheStorage } from './offlineTiles';
 import type { ActiveNavigationRoute, NavStep, RouteGeometry, Stop, SyncProgress, Zone } from '../types';
 
 function sleep(ms: number): Promise<void> {
@@ -335,22 +336,43 @@ export async function fetchTurnByTurnRoute(
 export async function enrichZonesGeoAndRoutes(
   rawZones: Zone[],
   cityHint: string,
-  onProgress?: (progress: SyncProgress) => void
+  onProgress?: (progress: SyncProgress) => void,
+  onPartialZones?: (zones: Zone[]) => void
 ): Promise<Zone[]> {
-  const totalStops = rawZones.reduce((acc, z) => acc + z.stops.length, 0);
-  let processedStops = 0;
-  const enriched: Zone[] = [];
+  // 1. Hidratar inmediatamente con coordenadas ya guardadas en caché para permitir trabajar al instante
+  const workingZones: Zone[] = await Promise.all(
+    rawZones.map(async (zone) => {
+      const hydratedStops = await Promise.all(
+        zone.stops.map(async (stop) => {
+          if (stop.lat !== null && stop.lng !== null) return stop;
+          const query = normalizeQuery(stop.address, cityHint);
+          const cached = await getCachedGeocode(query);
+          return cached ? { ...stop, lat: cached.lat, lng: cached.lng } : stop;
+        })
+      );
+      const cachedRoute = await computeRouteForStops(hydratedStops);
+      return { ...zone, stops: hydratedStops, route: cachedRoute };
+    })
+  );
 
-  for (const zone of rawZones) {
+  // Entregar inmediatamente las zonas a la UI para que el usuario pueda trabajar ya
+  onPartialZones?.(workingZones);
+
+  const totalStops = workingZones.reduce((acc, z) => acc + z.stops.length, 0);
+  let processedStops = 0;
+
+  for (let zIdx = 0; zIdx < workingZones.length; zIdx++) {
+    const zone = workingZones[zIdx];
     const stopsWithCoords: Stop[] = [];
+
     for (const stop of zone.stops) {
       if (stop.lat !== null && stop.lng !== null) {
         stopsWithCoords.push(stop);
       } else {
         onProgress?.({
           stage: 'geocoding',
-          message: `Geocodificando ${zone.name} (${processedStops + 1}/${totalStops})...`,
-          percent: Math.round(15 + (processedStops / Math.max(1, totalStops)) * 55),
+          message: `Guardando mapa offline · ${zone.name} (${processedStops + 1}/${totalStops})`,
+          percent: Math.round(15 + (processedStops / Math.max(1, totalStops)) * 45),
         });
         const coords = await geocodeAddress(stop.address, cityHint);
         stopsWithCoords.push({
@@ -364,31 +386,43 @@ export async function enrichZonesGeoAndRoutes(
 
     onProgress?.({
       stage: 'routing',
-      message: `Calculando ruta de ${zone.name}...`,
-      percent: 78,
+      message: `Guardando ruta offline de ${zone.name}...`,
+      percent: 68,
     });
     const route = await computeRouteForStops(stopsWithCoords);
 
-    enriched.push({
+    // Precargar tramos paso a paso (parada i-1 -> parada i) en IndexedDB para modo offline real
+    const validStops = stopsWithCoords.filter((s) => s.lat !== null && s.lng !== null);
+    for (let i = 1; i < validStops.length; i++) {
+      if (!navigator.onLine) break;
+      const a = validStops[i - 1];
+      const b = validStops[i];
+      await fetchTurnByTurnRoute([a.lat as number, a.lng as number], [b.lat as number, b.lng as number]);
+    }
+
+    workingZones[zIdx] = {
       ...zone,
       stops: stopsWithCoords,
       route,
       syncedAt: Date.now(),
-    });
+    };
+
+    // Actualizar progresivamente la memoria local y la UI tras cada zona
+    onPartialZones?.([...workingZones]);
   }
 
   onProgress?.({
     stage: 'caching_tiles',
-    message: 'Guardando mapas offline de las zonas...',
-    percent: 90,
+    message: 'Guardando calles del mapa para modo sin Wi-Fi...',
+    percent: 88,
   });
-  await precacheTilesForZones(enriched);
+  await precacheTilesToCacheStorage(workingZones);
 
   onProgress?.({
     stage: 'done',
-    message: 'Sincronización completada. Listo para modo sin Wi-Fi.',
+    message: 'Todo guardado en el teléfono. Listo para modo sin Wi-Fi.',
     percent: 100,
   });
 
-  return enriched;
+  return workingZones;
 }

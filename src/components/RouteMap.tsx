@@ -17,7 +17,84 @@ import {
   formatDurationEs,
   haversineMeters,
 } from '../services/geo';
+import { getTileUrl, OFFLINE_TILES_CACHE } from '../services/offlineTiles';
 import type { ActiveNavigationRoute, NavStep, Stop, Zone } from '../types';
+
+function createOfflineTileLayer(): L.GridLayer {
+  const OfflineLayer = L.GridLayer.extend({
+    createTile(coords: L.Coords, done: L.DoneCallback) {
+      const img = document.createElement('img');
+      img.alt = '';
+      img.setAttribute('role', 'presentation');
+      img.style.width = '256px';
+      img.style.height = '256px';
+
+      const url = getTileUrl(coords.z, coords.x, coords.y);
+
+      const loadTile = async () => {
+        try {
+          if (typeof caches !== 'undefined') {
+            const cache = await caches.open(OFFLINE_TILES_CACHE);
+            const cached = await cache.match(url);
+            if (cached) {
+              const blob = await cached.blob();
+              const objUrl = URL.createObjectURL(blob);
+              img.onload = () => {
+                URL.revokeObjectURL(objUrl);
+                done(undefined, img);
+              };
+              img.onerror = () => {
+                URL.revokeObjectURL(objUrl);
+                done(undefined, img);
+              };
+              img.src = objUrl;
+              return;
+            }
+
+            if (navigator.onLine) {
+              const res = await fetch(url, { mode: 'cors' });
+              if (res.ok) {
+                await cache.put(url, res.clone());
+                const blob = await res.blob();
+                const objUrl = URL.createObjectURL(blob);
+                img.onload = () => {
+                  URL.revokeObjectURL(objUrl);
+                  done(undefined, img);
+                };
+                img.onerror = () => {
+                  URL.revokeObjectURL(objUrl);
+                  done(undefined, img);
+                };
+                img.src = objUrl;
+                return;
+              }
+            }
+          }
+        } catch {
+          // Fallback directo a src
+        }
+
+        if (navigator.onLine) {
+          img.crossOrigin = 'anonymous';
+          img.onload = () => done(undefined, img);
+          img.onerror = () => done(undefined, img);
+          img.src = url;
+        } else {
+          done(undefined, img);
+        }
+      };
+
+      void loadTile();
+      return img;
+    },
+  });
+
+  return new (OfflineLayer as unknown as new (opts?: L.GridLayerOptions) => L.GridLayer)({
+    maxZoom: 19,
+    minZoom: 12,
+    tileSize: 256,
+  });
+}
 
 interface RouteMapProps {
   zone: Zone;
@@ -103,11 +180,8 @@ export function RouteMap({ zone, currentIndex, driverPosition, gpsError }: Route
       preferCanvas: true,
     });
 
-    // Tiles gratuitos de OpenStreetMap (sin API key, compatible con WebView Android)
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      crossOrigin: true,
-    }).addTo(map);
+    // Capa OSM con caché offline directa en Cache API (funciona 100% sin Wi-Fi en Android APK)
+    createOfflineTileLayer().addTo(map);
 
     map.on('dragstart', () => {
       setFollowMode(false);

@@ -111,7 +111,11 @@ export default function App() {
         const enriched = await enrichZonesGeoAndRoutes(
           rawZones,
           cfg.sheet.cityHint,
-          setSyncProgress
+          setSyncProgress,
+          (partialZones) => {
+            setZones(partialZones);
+            void saveAllZones(partialZones);
+          }
         );
 
         await saveAllZones(enriched);
