@@ -1,4 +1,9 @@
-import { getCachedGeocode, getCachedRoute, setCachedGeocode, setCachedRoute } from './db';
+import {
+  getCachedGeocode,
+  getCachedRoute,
+  setCachedGeocode,
+  setCachedRoute,
+} from './db';
 import type { ActiveNavigationRoute, NavStep, RouteGeometry, Stop, SyncProgress, Zone } from '../types';
 
 function sleep(ms: number): Promise<void> {
@@ -240,6 +245,13 @@ export async function fetchTurnByTurnRoute(
   destination: [number, number]
 ): Promise<ActiveNavigationRoute> {
   const distDirect = haversineMeters(origin, destination);
+  const tbtCacheKey = `tbt:${origin[0].toFixed(4)},${origin[1].toFixed(4)}->${destination[0].toFixed(4)},${destination[1].toFixed(4)}`;
+
+  // 1. Intentar caché offline en IndexedDB primero si estamos sin conexión
+  const cachedTbt = (await getCachedRoute(tbtCacheKey)) as unknown as ActiveNavigationRoute | null;
+  if (!navigator.onLine && cachedTbt && Array.isArray(cachedTbt.steps)) {
+    return cachedTbt;
+  }
 
   if (navigator.onLine) {
     try {
@@ -280,18 +292,26 @@ export async function fetchTurnByTurnRoute(
             };
           });
 
-          return {
+          const navResult: ActiveNavigationRoute = {
             coordinates: first.geometry.coordinates.map(([lng, lat]) => [lat, lng]),
             distanceMeters: Math.round(first.distance),
             durationSeconds: Math.round(first.duration),
             steps,
             isFallback: false,
           };
+
+          // Guardar en IndexedDB para modo 100% offline
+          await setCachedRoute(tbtCacheKey, navResult as unknown as RouteGeometry);
+          return navResult;
         }
       }
     } catch {
-      // Fallback offline limpio
+      // Fallback a caché o línea directa
     }
+  }
+
+  if (cachedTbt && Array.isArray(cachedTbt.steps)) {
+    return cachedTbt;
   }
 
   return {

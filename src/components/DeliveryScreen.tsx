@@ -86,6 +86,9 @@ export function DeliveryScreen({
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-black text-white">
+      {/* Franja superior segura para no solapar nunca la hora ni la batería del teléfono */}
+      <div className="safe-top shrink-0 bg-black" />
+
       {/* Mapa protagonista estilo Google Maps */}
       <section className="relative flex-1 min-h-[45%] w-full">
         <RouteMap

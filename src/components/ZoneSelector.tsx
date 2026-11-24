@@ -180,26 +180,26 @@ export function ZoneSelector({
 
       {/* Contenido principal */}
       <main className="safe-bottom mx-auto flex w-full max-w-xl flex-1 flex-col gap-4 px-4 pt-4">
-        {/* Resumen global de carga cuando hay varias zonas */}
-        {zones.length > 1 && globalSummary.total > 0 && (
-          <section className="rounded-2xl bg-[#111111] p-4 ring-1 ring-[#D4AF37]/30">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#E5C158]">
-                <Newspaper className="h-4 w-4" />
-                Carga total ({zones.length} zonas)
+        {/* Resumen global de carga claramente diferenciado (estilo dorado corporativo) */}
+        {zones.length > 0 && globalSummary.total > 0 && (
+          <section className="rounded-2xl bg-gradient-to-br from-[#241C09] via-[#161106] to-[#0D0A04] p-4 shadow-lg ring-1 ring-[#D4AF37]/55">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-[#F3DC8B]">
+                <Newspaper className="h-4 w-4 text-[#D4AF37]" />
+                Carga total a preparar
               </div>
-              <span className="rounded-full bg-[#D4AF37]/20 px-3 py-1 text-sm font-extrabold text-[#F3DC8B] tabular-nums">
+              <span className="rounded-full bg-[#D4AF37] px-3 py-1 text-xs font-extrabold text-black tabular-nums">
                 {globalSummary.total} uds
               </span>
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
               {globalSummary.items.map((item) => (
                 <div
                   key={item.name}
-                  className="flex items-center justify-between gap-2 rounded-xl bg-black/80 px-3 py-2.5 ring-1 ring-white/10"
+                  className="flex items-center justify-between gap-3 rounded-xl bg-black/60 px-3.5 py-2.5 ring-1 ring-[#D4AF37]/25"
                 >
-                  <span className="truncate text-sm font-semibold text-neutral-100">
+                  <span className="text-sm font-semibold leading-snug text-white">
                     {item.name}
                   </span>
                   <span className="shrink-0 text-lg font-extrabold text-[#F3DC8B] tabular-nums">
@@ -211,12 +211,21 @@ export function ZoneSelector({
           </section>
         )}
 
-        {/* Lista de zonas con desglose grande y claro de periódicos (preparado para 10+ tipos) */}
+        {/* Separador claro para la lista de zonas */}
+        {zones.length > 0 && (
+          <div className="flex items-center justify-between pt-1">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-neutral-400">
+              Zonas de reparto ({zones.length})
+            </h2>
+          </div>
+        )}
+
+        {/* Lista de zonas con nombres completos de periódicos (sin cortar) */}
         {zones.length === 0 ? (
-          <div className="mt-8 rounded-2xl bg-[#111111] p-8 text-center ring-1 ring-[#D4AF37]/20">
+          <div className="mt-8 rounded-2xl bg-[#121212] p-8 text-center ring-1 ring-white/10">
             <p className="text-base font-semibold text-neutral-200">Sin zonas disponibles</p>
             <p className="mt-1 text-sm text-neutral-400">
-              Conecta tu Google Sheet en Ajustes y pulsa sincronizar.
+              Pulsa el botón de sincronizar arriba cuando tengas conexión para descargar tus rutas.
             </p>
           </div>
         ) : (
@@ -232,12 +241,14 @@ export function ZoneSelector({
                 key={zone.id}
                 type="button"
                 onClick={() => onSelectZone(zone)}
-                className="flex w-full flex-col gap-3.5 rounded-2xl bg-[#111111] p-4 text-left ring-1 ring-[#D4AF37]/25 transition active:scale-[0.99] active:bg-[#191919] active:ring-[#D4AF37]/60"
+                className="flex w-full flex-col gap-3.5 rounded-2xl bg-[#121212] p-4 text-left ring-1 ring-white/10 transition active:scale-[0.99] active:bg-[#1A1A1A] active:ring-[#D4AF37]/50"
               >
                 <div className="flex w-full items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <h2 className="truncate text-xl font-extrabold text-white">{zone.name}</h2>
+                      <h3 className="text-xl font-extrabold leading-tight text-white">
+                        {zone.name}
+                      </h3>
                       {isCompleted && (
                         <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />
                       )}
@@ -268,23 +279,23 @@ export function ZoneSelector({
                     </div>
                   </div>
 
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#D4AF37]/15 text-[#F3DC8B]">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/5 text-[#E5C158] ring-1 ring-white/10">
                     <ChevronRight className="h-5 w-5" />
                   </div>
                 </div>
 
-                {/* Cuadrícula de periódicos grande y clara (hasta 10+ tipos sin apelotonarse) */}
+                {/* Lista de periódicos sin cortar nombres, clara y grande */}
                 {summary.items.length > 0 && (
-                  <div className="grid w-full grid-cols-2 gap-2 border-t border-white/10 pt-3">
+                  <div className="grid w-full grid-cols-1 gap-1.5 border-t border-white/10 pt-3 sm:grid-cols-2">
                     {summary.items.map((item) => (
                       <div
                         key={item.name}
-                        className="flex items-center justify-between gap-2 rounded-xl bg-black/75 px-3 py-2.5 ring-1 ring-[#D4AF37]/20"
+                        className="flex items-center justify-between gap-3 rounded-xl bg-black/70 px-3.5 py-2.5 ring-1 ring-white/10"
                       >
-                        <span className="truncate text-sm font-semibold text-neutral-100">
+                        <span className="text-sm font-semibold leading-snug text-neutral-100">
                           {item.name}
                         </span>
-                        <span className="shrink-0 rounded-md bg-[#D4AF37]/20 px-2 py-0.5 text-base font-extrabold text-[#F3DC8B] tabular-nums">
+                        <span className="shrink-0 rounded-md bg-[#D4AF37]/20 px-2.5 py-0.5 text-base font-extrabold text-[#F3DC8B] tabular-nums">
                           {item.count}
                         </span>
                       </div>
