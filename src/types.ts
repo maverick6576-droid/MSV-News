@@ -37,6 +37,7 @@ export interface Zone {
   name: string;
   stops: Stop[];
   route: RouteGeometry | null;
+  legs?: Record<string, ActiveNavigationRoute>;
   syncedAt: number;
 }
 

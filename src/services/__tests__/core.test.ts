@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { haversineMeters } from '../geo';
+import { cleanSpanishAddress, distanceToPolylineMeters, haversineMeters } from '../geo';
 import { parseNewspapersList, slugifyZone } from '../sheets';
 import { buildStopSpeechMessage } from '../tts';
 import type { Stop } from '../../types';
@@ -16,6 +16,25 @@ describe('MSV News core services', () => {
       'El Mundo',
       'El Punt',
     ]);
+  });
+
+  it('cleans Spanish and Catalan addresses with abbreviations and floors', () => {
+    expect(cleanSpanishAddress('La Riera, 12, 1º 1ª')).toEqual({
+      streetAndNumber: 'La Riera 12',
+      streetOnly: 'La Riera',
+    });
+    expect(cleanSpanishAddress('C/ Balmes 48 4º 2ª')).toEqual({
+      streetAndNumber: 'Carrer Balmes 48',
+      streetOnly: 'Carrer Balmes',
+    });
+    expect(cleanSpanishAddress('Av. Puig i Cadafalch, 110, Bajo')).toEqual({
+      streetAndNumber: 'Avinguda Puig i Cadafalch 110',
+      streetOnly: 'Avinguda Puig i Cadafalch',
+    });
+    expect(cleanSpanishAddress('Pl. de Cuba, 8, Local 2')).toEqual({
+      streetAndNumber: 'Plaça de Cuba 8',
+      streetOnly: 'Plaça de Cuba',
+    });
   });
 
   it('builds natural Spanish TTS messages with and without notes', () => {
@@ -40,9 +59,18 @@ describe('MSV News core services', () => {
     expect(buildStopSpeechMessage(withoutNotes)).toBe('El País, en La Riera, 12');
   });
 
-  it('calculates haversine distance accurately', () => {
+  it('calculates haversine and polyline distances accurately', () => {
     const d = haversineMeters([41.3856, 2.1652], [41.3894, 2.1665]);
     expect(d).toBeGreaterThan(400);
     expect(d).toBeLessThan(500);
+
+    const polyDist = distanceToPolylineMeters(
+      [41.5381, 2.4447],
+      [
+        [41.5381, 2.4447],
+        [41.54, 2.445],
+      ]
+    );
+    expect(polyDist).toBe(0);
   });
 });

@@ -22,12 +22,18 @@
 }
 
 .leaflet-container {
-  background: #0c0c0c;
+  background: #e8eaed;
   font-family: inherit;
 }
 
+/* Ajuste fino de color para acercar los tiles OSM al look limpio y luminoso de Google Maps */
+.gmaps-look .leaflet-tile-pane {
+  filter: saturate(1.14) contrast(1.03) brightness(1.03);
+}
+
 .msv-stop-marker,
-.msv-driver-marker {
+.msv-driver-marker,
+.msv-dir-arrow {
   background: transparent;
   border: none;
 }
