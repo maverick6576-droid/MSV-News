@@ -48,13 +48,7 @@ export interface ZoneProgress {
   completedAt: number | null;
 }
 
-export type SheetMode = 'demo' | 'apps_script' | 'public_sheet';
-
 export interface SheetConfig {
-  mode: SheetMode;
-  appsScriptUrl: string;
-  sheetUrlOrId: string;
-  tabNames: string; // Separados por comas para modo public_sheet
   cityHint: string; // Ciudad/país por defecto para mejorar geocodificación
 }
 

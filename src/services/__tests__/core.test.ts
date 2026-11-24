@@ -1,30 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import { haversineMeters } from '../geo';
-import { extractSheetId, parseGvizText, parseNewspapersList } from '../sheets';
+import { parseNewspapersList, slugifyZone } from '../sheets';
 import { buildStopSpeechMessage } from '../tts';
 import type { Stop } from '../../types';
 
 describe('MSV News core services', () => {
-  it('extracts Google Sheet ID from full URL or raw ID', () => {
-    expect(
-      extractSheetId('https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz/edit#gid=0')
-    ).toBe('1AbCdEfGhIjKlMnOpQrStUvWxYz');
-    expect(extractSheetId('1AbCdEfGhIjKlMnOpQrStUvWxYz')).toBe('1AbCdEfGhIjKlMnOpQrStUvWxYz');
+  it('slugifies zone tab names cleanly', () => {
+    expect(slugifyZone('Zona Mataró')).toBe('zona-mataro');
+    expect(slugifyZone('  Zona Norte 2  ')).toBe('zona-norte-2');
   });
 
   it('parses comma-separated newspapers cleanly', () => {
-    expect(parseNewspapersList('La Vanguardia, El Mundo,  Sport ')).toEqual([
+    expect(parseNewspapersList('La Vanguardia, El Mundo,  El Punt ')).toEqual([
       'La Vanguardia',
       'El Mundo',
-      'Sport',
-    ]);
-  });
-
-  it('parses GViz JSONP response and skips header row', () => {
-    const sample = `/*O_o*/\ngoogle.visualization.Query.setResponse({"table":{"rows":[{"c":[{"v":"Dirección"},{"v":"Periódicos"},{"v":"Observación"}]},{"c":[{"v":"Calle Mayor 10, 2º"},{"v":"La Vanguardia, El Mundo"},{"v":"Dejar por debajo de la puerta"}]}]}});`;
-    const rows = parseGvizText(sample);
-    expect(rows).toEqual([
-      ['Calle Mayor 10, 2º', 'La Vanguardia, El Mundo', 'Dejar por debajo de la puerta'],
+      'El Punt',
     ]);
   });
 
@@ -32,14 +22,14 @@ describe('MSV News core services', () => {
     const withNotes: Stop = {
       id: '1',
       index: 0,
-      address: 'Calle Pelai 12',
-      newspapers: ['La Vanguardia', 'El Mundo'],
+      address: 'La Riera, 12',
+      newspapers: ['La Vanguardia', 'El Punt'],
       notes: 'Dejar por debajo de la puerta',
-      lat: 41.38,
-      lng: 2.16,
+      lat: 41.54,
+      lng: 2.44,
     };
     expect(buildStopSpeechMessage(withNotes)).toBe(
-      'La Vanguardia y El Mundo, y se dejan en Dejar por debajo de la puerta'
+      'La Vanguardia y El Punt, y se dejan en Dejar por debajo de la puerta'
     );
 
     const withoutNotes: Stop = {
@@ -47,7 +37,7 @@ describe('MSV News core services', () => {
       newspapers: ['El País'],
       notes: '   ',
     };
-    expect(buildStopSpeechMessage(withoutNotes)).toBe('El País, en Calle Pelai 12');
+    expect(buildStopSpeechMessage(withoutNotes)).toBe('El País, en La Riera, 12');
   });
 
   it('calculates haversine distance accurately', () => {

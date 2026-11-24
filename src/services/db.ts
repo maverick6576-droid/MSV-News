@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import { FIXED_DATABASE } from '../config/database';
 import type { AppSettings, DriverSession, RouteGeometry, Zone, ZoneProgress } from '../types';
 
 interface MsvNewsDB extends DBSchema {
@@ -65,11 +66,7 @@ function getDb(): Promise<IDBPDatabase<MsvNewsDB>> {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   sheet: {
-    mode: 'demo',
-    appsScriptUrl: '',
-    sheetUrlOrId: '',
-    tabNames: 'Zona Centro, Zona Ensanche, Zona Puerto',
-    cityHint: 'Barcelona, España',
+    cityHint: FIXED_DATABASE.defaultCityHint,
   },
   voice: {
     enabled: true,

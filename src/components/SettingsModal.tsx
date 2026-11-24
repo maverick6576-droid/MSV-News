@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
-  Check,
-  Copy,
+  CheckCircle2,
   Flag,
   Layers,
   RefreshCw,
@@ -10,9 +9,8 @@ import {
   Volume2,
   X,
 } from 'lucide-react';
-import { APPS_SCRIPT_TEMPLATE } from '../services/sheets';
 import { isSpeechSupported } from '../services/tts';
-import type { AppSettings, SheetMode } from '../types';
+import type { AppSettings } from '../types';
 
 interface SettingsModalProps {
   settings: AppSettings;
@@ -40,7 +38,6 @@ export function SettingsModal({
   onRestartRoute,
 }: SettingsModalProps) {
   const [draft, setDraft] = useState<AppSettings>(settings);
-  const [copiedScript, setCopiedScript] = useState(false);
 
   const handleSaveAndSync = () => {
     onUpdateSettings(draft);
@@ -51,23 +48,6 @@ export function SettingsModal({
   const handleSaveOnly = () => {
     onUpdateSettings(draft);
     onClose();
-  };
-
-  const handleCopyScript = async () => {
-    try {
-      await navigator.clipboard.writeText(APPS_SCRIPT_TEMPLATE);
-      setCopiedScript(true);
-      setTimeout(() => setCopiedScript(false), 2000);
-    } catch {
-      // ignore clipboard errors
-    }
-  };
-
-  const setSheetMode = (mode: SheetMode) => {
-    setDraft((prev) => ({
-      ...prev,
-      sheet: { ...prev.sheet, mode },
-    }));
   };
 
   return (
@@ -157,7 +137,6 @@ export function SettingsModal({
               </p>
             )}
 
-            {/* Toggle moderno */}
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-neutral-100">Auto-lectura al cambiar</p>
@@ -232,140 +211,41 @@ export function SettingsModal({
             </div>
           </section>
 
-          {/* Configuración de Google Sheets */}
+          {/* Base de datos fija Google Sheets */}
           <section className="space-y-3.5 rounded-2xl bg-[#121212] p-4 ring-1 ring-white/10">
-            <div className="flex items-center gap-2 text-sm font-bold text-white">
-              <Sheet className="h-4 w-4 text-emerald-400" />
-              Fuente de datos Google Sheets
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-bold text-white">
+                <Sheet className="h-4 w-4 text-emerald-400" />
+                Base de datos Google Sheets
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-400">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Vinculada
+              </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5 rounded-xl bg-black p-1 text-xs font-bold ring-1 ring-white/10">
-              <button
-                type="button"
-                onClick={() => setSheetMode('demo')}
-                className={`rounded-lg py-2.5 transition ${
-                  draft.sheet.mode === 'demo'
-                    ? 'bg-gradient-to-r from-[#F3DC8B] to-[#D4AF37] text-black'
-                    : 'text-neutral-400'
-                }`}
-              >
-                Demo
-              </button>
-              <button
-                type="button"
-                onClick={() => setSheetMode('apps_script')}
-                className={`rounded-lg py-2.5 transition ${
-                  draft.sheet.mode === 'apps_script'
-                    ? 'bg-gradient-to-r from-[#F3DC8B] to-[#D4AF37] text-black'
-                    : 'text-neutral-400'
-                }`}
-              >
-                Apps Script
-              </button>
-              <button
-                type="button"
-                onClick={() => setSheetMode('public_sheet')}
-                className={`rounded-lg py-2.5 transition ${
-                  draft.sheet.mode === 'public_sheet'
-                    ? 'bg-gradient-to-r from-[#F3DC8B] to-[#D4AF37] text-black'
-                    : 'text-neutral-400'
-                }`}
-              >
-                Hoja Pública
-              </button>
+            <p className="text-xs leading-relaxed text-neutral-400">
+              Todas las pestañas de la Google Sheet corporativa se leen y separan automáticamente en
+              zonas de reparto al sincronizar.
+            </p>
+
+            <div className="space-y-1">
+              <label className="block text-xs text-neutral-400">
+                Ciudad / País por defecto (geocodificación)
+              </label>
+              <input
+                type="text"
+                value={draft.sheet.cityHint}
+                onChange={(e) =>
+                  setDraft((prev) => ({
+                    ...prev,
+                    sheet: { ...prev.sheet, cityHint: e.target.value },
+                  }))
+                }
+                placeholder="Ej. Mataró, España"
+                className="w-full rounded-xl bg-black px-3.5 py-3 text-sm text-white placeholder-neutral-500 ring-1 ring-white/15 focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
+              />
             </div>
-
-            {draft.sheet.mode === 'apps_script' && (
-              <div className="space-y-2.5">
-                <p className="text-xs leading-relaxed text-neutral-400">
-                  Detecta todas las pestañas automáticamente. Pega el código en{' '}
-                  <span className="font-semibold text-neutral-200">Extensiones → Apps Script</span>{' '}
-                  y despliégalo como Aplicación web (Cualquier usuario).
-                </p>
-                <button
-                  type="button"
-                  onClick={handleCopyScript}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-[#1B1B1B] px-3 py-2 text-xs font-bold text-[#F3DC8B] ring-1 ring-[#D4AF37]/30 active:scale-95"
-                >
-                  {copiedScript ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-400" />
-                      Código copiado
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" />
-                      Copiar código Apps Script
-                    </>
-                  )}
-                </button>
-                <input
-                  type="url"
-                  value={draft.sheet.appsScriptUrl}
-                  onChange={(e) =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      sheet: { ...prev.sheet, appsScriptUrl: e.target.value },
-                    }))
-                  }
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                  className="w-full rounded-xl bg-black px-3.5 py-3 text-sm text-white placeholder-neutral-500 ring-1 ring-white/15 focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
-                />
-              </div>
-            )}
-
-            {draft.sheet.mode === 'public_sheet' && (
-              <div className="space-y-2.5">
-                <p className="text-xs leading-relaxed text-neutral-400">
-                  Comparte tu hoja como &quot;Cualquier persona con el enlace (Lector)&quot; y pega
-                  la URL o ID.
-                </p>
-                <input
-                  type="text"
-                  value={draft.sheet.sheetUrlOrId}
-                  onChange={(e) =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      sheet: { ...prev.sheet, sheetUrlOrId: e.target.value },
-                    }))
-                  }
-                  placeholder="URL o ID de Google Sheet"
-                  className="w-full rounded-xl bg-black px-3.5 py-3 text-sm text-white placeholder-neutral-500 ring-1 ring-white/15 focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
-                />
-                <input
-                  type="text"
-                  value={draft.sheet.tabNames}
-                  onChange={(e) =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      sheet: { ...prev.sheet, tabNames: e.target.value },
-                    }))
-                  }
-                  placeholder="Pestañas separadas por comas (ej. Zona Mataró)"
-                  className="w-full rounded-xl bg-black px-3.5 py-3 text-sm text-white placeholder-neutral-500 ring-1 ring-white/15 focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
-                />
-              </div>
-            )}
-
-            {draft.sheet.mode !== 'demo' && (
-              <div className="space-y-1">
-                <label className="block text-xs text-neutral-400">
-                  Ciudad / País por defecto
-                </label>
-                <input
-                  type="text"
-                  value={draft.sheet.cityHint}
-                  onChange={(e) =>
-                    setDraft((prev) => ({
-                      ...prev,
-                      sheet: { ...prev.sheet, cityHint: e.target.value },
-                    }))
-                  }
-                  placeholder="Ej. Mataró, España"
-                  className="w-full rounded-xl bg-black px-3.5 py-3 text-sm text-white placeholder-neutral-500 ring-1 ring-white/15 focus:ring-2 focus:ring-[#D4AF37] focus:outline-none"
-                />
-              </div>
-            )}
           </section>
         </div>
 

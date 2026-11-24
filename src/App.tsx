@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DeliveryScreen } from './components/DeliveryScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { SettingsModal } from './components/SettingsModal';
 import { ZoneSelector } from './components/ZoneSelector';
-import { DEMO_ZONES } from './data/demoData';
 import { useNetworkStatus } from './hooks/useNetworkStatus';
 import {
   DEFAULT_SETTINGS,
@@ -17,7 +16,7 @@ import {
   saveZoneProgress,
 } from './services/db';
 import { enrichZonesGeoAndRoutes } from './services/geo';
-import { fetchZonesFromConfig } from './services/sheets';
+import { fetchZonesFromFixedSheet } from './services/sheets';
 import { speakStop, stopSpeaking } from './services/tts';
 import type { AppSettings, DriverSession, SyncProgress, Zone, ZoneProgress } from './types';
 
@@ -30,6 +29,7 @@ export default function App() {
   const [progressMap, setProgressMap] = useState<Record<string, ZoneProgress>>({});
   const [activeZoneId, setActiveZoneId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const autoSyncedRef = useRef(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgress>({
     stage: 'idle',
     message: '',
@@ -55,13 +55,14 @@ export default function App() {
         setSettings(savedSettings);
         setProgressMap(savedProgress);
 
-        if (savedZones.length > 0) {
-          setZones(savedZones);
-        } else {
-          // Precarga inicial de zonas demo para funcionamiento inmediato sin internet
-          await saveAllZones(DEMO_ZONES);
-          setZones(DEMO_ZONES);
+        // Filtrar antiguas zonas demo si quedaron guardadas en dispositivos previos
+        const realZones = savedZones.filter(
+          (z) => z.id !== 'zona-centro' && z.id !== 'zona-ensanche' && z.id !== 'zona-puerto'
+        );
+        if (realZones.length !== savedZones.length) {
+          await saveAllZones(realZones);
         }
+        setZones(realZones);
       } finally {
         if (!cancelled) setHydrated(true);
       }
@@ -102,11 +103,11 @@ export default function App() {
       try {
         setSyncProgress({
           stage: 'fetching_sheets',
-          message: 'Descargando zonas desde Google Sheets...',
+          message: 'Leyendo hojas de la Google Sheet...',
           percent: 10,
         });
 
-        const rawZones = await fetchZonesFromConfig(cfg.sheet);
+        const rawZones = await fetchZonesFromFixedSheet();
         const enriched = await enrichZonesGeoAndRoutes(
           rawZones,
           cfg.sheet.cityHint,
@@ -137,6 +138,13 @@ export default function App() {
     },
     [settings]
   );
+
+  // Auto-sincronizar al abrir la app si hay conexión
+  useEffect(() => {
+    if (!hydrated || !isOnline || autoSyncedRef.current) return;
+    autoSyncedRef.current = true;
+    void handleSyncNow(settings);
+  }, [hydrated, isOnline, handleSyncNow, settings]);
 
   const activeZone = zones.find((z) => z.id === activeZoneId) ?? null;
 
